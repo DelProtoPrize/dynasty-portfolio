@@ -5,6 +5,27 @@ The point of this triage: a sports-analytics panel rewards rigor and is skeptica
 of finance buzzwords used loosely. Everything below is buildable — but some items
 are flagship-strong and a couple need to be framed carefully or they read as gimmicks.
 
+## Valuation sources, and the TE-premium decision (DECIDED)
+
+Two market sources, two different epistemologies — which is *why* they disagree:
+- **FantasyPros (via DynastyProcess)** = a model-transformed **expert ranking**.
+  DP scrapes FantasyPros Dynasty ECR (ordinal) and converts to a cardinal value via
+  `Value = 10500 * e^(ECR * -0.0235)`; Superflex is a LOESS 1QB→2QB ADP remap.
+  Consequence: it is **not** TE-premium aware and **not** age-aware by construction.
+  (`fp_ecr_2qb` = the rank; `fp_value_2qb` = the exponential value derived from it.)
+- **FantasyCalc** = a crowd-sourced **market price** from real trades. Better reflects
+  live demand, BUT the public `values/current` endpoint does **not** expose a working
+  TE-premium parameter (tested: tePremium/teBonus/tep all ignored). So what we pull is
+  also effectively non-TEP-segmented.
+
+**Decision: do NOT apply a flat TE-premium multiplier.** TEP pays *per reception*, so
+its value is `projected_receptions × tep_bonus` → value. A flat % overpays
+touchdown-dependent TEs and underpays high-target-share TEs — inverting what TEP
+rewards. Therefore **TE-premium is computed downstream of the projection model**
+(target share → receptions → bonus → incremental value), not as a standalone fudge.
+Until projections exist, FP/FC values are served **as-is and labeled non-TEP**; the
+large TE arbitrage deltas are interpreted as genuine market-vs-expert signal.
+
 ## A. Grounded with data we already have (MVP — build first)
 These run off the current warehouse with SQL + light compute. Interview-ready.
 - **League breakdown** — aggregates over dims/fact.
@@ -59,3 +80,32 @@ Node serve them. Plays to SQL+Python strengths instead of reimplementing math in
 2. **ETL additions (Bucket B)** — players_points + transactions + accruing snapshots.
 3. **Advanced models (Bucket C)** + nflverse integration; DCF as the showpiece.
 4. **LBO/leverage** only if time allows, framed as analysis not a literal model.
+
+---
+
+## Roster construction layer (the "scarcity / cornering" question)
+
+Decision: this sits **on top of** per-player value, never inside it. A player's value
+is a property of the player + NFL + league *settings*, not of whose roster he's on —
+keep it mark-to-market so two managers' valuations of the same asset stay comparable
+(required for trade analysis). Static league structure (3 FLEX, SF, 14 teams) already
+lives in the projection/VORP replacement math. Dynamic roster construction is the layer
+above. Three tiers:
+
+1. **Asset price (built):** projection -> VORP -> value. Context-free. `v_player_value`.
+2. **Portfolio construction (next):** per roster, SOLVE the optimal lineup, don't count
+   slots. Slot-eligibility matrix derived from `roster_positions`:
+     QB{QB} RB{RB} WR{WR} TE{TE} FLEX{RB,WR,TE} SUPER_FLEX{QB,RB,WR,TE}
+   Assign players -> slots maximizing projected points (tier-nested, so fill
+   most-restrictive -> least-restrictive with best remaining eligible; tiny max-weight
+   assignment). Outputs: **Optimal Starting Lineup value** (deployable points — an elite
+   RB lands in FLEX; SF takes QB2 *or* an RB if it outprojects), and **true surplus**
+   (only players who LOSE the assignment = injury/bye insurance + trade capital).
+   This is where the "4th RB1 as sell-high capital" signal actually lives.
+3. **Endogenous replacement / cornering (the novel one):** replacement level is not the
+   global pool — it's value-over-next-AVAILABLE (VONA) given what's actually held. When
+   one manager corners a position, everyone else's effective replacement drops. Surface
+   via positional HHI across teams + a diagnostic ("RB1s held: 4 / remaining 8 across 13").
+4. **Marginal win-equity (later):** convert lineup distribution -> weekly win prob;
+   high-floor concentration wins more H2H than raw points imply. Bridge to championship-
+   equity / DCF-of-wins.

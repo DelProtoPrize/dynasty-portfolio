@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Roster Portfolio &amp; Asset Valuation</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    /* ============================================================
+       SKIN: ported from the Index1 redesign (presentation only).
+       DATA: ./src/app.js, untouched — it fills the same ids as before.
+       Load-bearing ids (every one must exist exactly once below):
+       league, valueChart, diagTable, triPanel, triChart, rosterPanel,
+       rosterTitle, rosterSummary, posChart, rosterTable
+       ============================================================ */
+    :root {
+      --bg: #090c10;
+      --surface: #111419;
+      --panel: #161b22;
+      --panel-hover: #1c2230;
+      --ink: #dde4ee;
+      --ink-dim: #8a95a8;
+      --ink-faint: #3d4756;
+      --accent: #3d80f5;
+      --accent-dim: #1e3a6e;
+      --good: #3ecf74;
+      --good-dim: #0f3d20;
+      --bad: #f5605a;
+      --bad-dim: #3d1614;
+      --warn: #e8a838;
+      --warn-dim: #3d2a0a;
+      --line: #1e2530;
+      --line-strong: #2a3340;
+      --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+      --qb: #3d80f5; --rb: #3ecf74; --wr: #e8a838; --te: #b47cf5; --k: #8a95a8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--ink); min-height: 100vh;
+           font: 14px/1.5 -apple-system, 'Segoe UI', Roboto, sans-serif; }
+
+    /* ── TICKER TAPE (visual shell; honest placeholder until wired) ── */
+    .tape-wrap { background: var(--surface); border-bottom: 1px solid var(--line);
+                 overflow: hidden; height: 34px; display: flex; align-items: center; }
+    .tape-label { flex-shrink: 0; padding: 0 14px; font: 600 10px/1 var(--mono);
+                  letter-spacing: .08em; color: var(--accent); height: 100%;
+                  border-right: 1px solid var(--line); display: flex; align-items: center;
+                  background: var(--surface); z-index: 1; }
+    .tape-scroll { flex: 1; overflow: hidden; position: relative; }
+    .tape-inner { display: flex; white-space: nowrap;
+                  animation: ticker 40s linear infinite; will-change: transform; }
+    .tape-inner:hover { animation-play-state: paused; }
+    .tape-inner.unwired { animation: none; }     /* placeholder doesn't scroll */
+    @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    @media (prefers-reduced-motion: reduce) { .tape-inner { animation: none; } }
+    .tape-item { display: inline-flex; align-items: center; gap: 8px; padding: 0 20px;
+                 border-right: 1px solid var(--line); font: 12px var(--mono); }
+    .tape-item .name { color: var(--ink); font-weight: 600; }
+    .tape-item .val { color: var(--ink-dim); }
+    .tape-item .delta { font-weight: 600; }
+    .tape-item .pos-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 700; }
+    .tape-item.placeholder { color: var(--ink-faint); border-right: 0; }
+
+    /* ── HEADER ── */
+    header { padding: 16px 24px; border-bottom: 1px solid var(--line);
+             display: flex; align-items: center; gap: 20px; background: var(--surface); }
+    .header-brand { display: flex; flex-direction: column; gap: 2px; }
+    .header-brand .wordmark { font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
+    .header-brand .tagline { font-size: 11px; color: var(--ink-dim); letter-spacing: .04em; text-transform: uppercase; }
+    .header-controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+    nav { display: flex; gap: 4px; }
+    nav a { color: var(--ink-dim); text-decoration: none; font-size: 12px; padding: 5px 12px;
+            border-radius: 6px; border: 1px solid transparent; transition: all .15s; }
+    nav a:hover { color: var(--ink); background: var(--panel-hover); }
+    nav a:focus-visible { color: var(--ink); background: var(--panel-hover);
+                          outline: 2px solid var(--accent); outline-offset: 1px; }
+    nav a.here { color: var(--ink); background: var(--panel); border-color: var(--line-strong); }
+    select { background: var(--panel); color: var(--ink); border: 1px solid var(--line-strong);
+             border-radius: 7px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+
+    /* ── LAYOUT ── */
+    main.page { padding: 20px 24px; max-width: 1200px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .grid-4 { grid-template-columns: 1fr 1fr; } .grid-2 { grid-template-columns: 1fr; } }
+    .section-gap { height: 20px; }
+
+    /* ── PANELS ── */
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+    .panel-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+    .panel-head h2, .panel h2 { font-size: 11px; font-weight: 700; text-transform: uppercase;
+                                letter-spacing: .07em; color: var(--ink-dim); }
+    .panel-sub { font-size: 11px; color: var(--ink-faint); font-weight: 400;
+                 text-transform: none; letter-spacing: 0; margin-left: 8px; }
+
+    /* ── KPI CARDS (shipped as honest empty states until wired) ── */
+    .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+           padding: 14px 16px; position: relative; overflow: hidden; }
+    .kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+    .kpi.kpi-accent::before { background: var(--accent); }
+    .kpi.kpi-good::before { background: var(--good); }
+    .kpi.kpi-bad::before { background: var(--bad); }
+    .kpi.kpi-warn::before { background: var(--warn); }
+    .kpi.unwired::before { background: var(--ink-faint); }
+    .kpi-label { font-size: 11px; color: var(--ink-dim); text-transform: uppercase;
+                 letter-spacing: .06em; font-weight: 600; margin-bottom: 8px; }
+    .kpi-value { font: 700 26px/1 var(--mono); color: var(--ink); letter-spacing: -.02em; }
+    .kpi.unwired .kpi-value { color: var(--ink-faint); }
+    .kpi-sub { font-size: 11px; color: var(--ink-dim); margin-top: 6px;
+               display: flex; align-items: center; gap: 5px; }
+    .kpi-sub .delta-tag { font: 600 11px var(--mono); padding: 1px 5px; border-radius: 3px; }
+    .kpi-sub .delta-tag.up { color: var(--good); background: var(--good-dim); }
+    .kpi-sub .delta-tag.down { color: var(--bad); background: var(--bad-dim); }
+    .kpi-sub .delta-tag.flat { color: var(--warn); background: var(--warn-dim); }
+    .kpi-sub .delta-tag.todo { color: var(--ink-faint); background: var(--surface);
+                               border: 1px solid var(--line); }
+
+    /* ── TABLES ── */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th, th { text-align: left; padding: 6px 10px; font-size: 10px; font-weight: 700;
+               text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim);
+               border-bottom: 1px solid var(--line); }
+    thead th.num, th.num { text-align: right; }
+    tbody td, td { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--ink); }
+    tbody td.num, td.num { text-align: right; font: 13px var(--mono); color: var(--ink);
+                           font-variant-numeric: tabular-nums; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr.clickable { cursor: pointer; }
+    tbody tr.clickable:hover { background: var(--panel-hover); }
+
+    /* ── POSITION BADGES ──
+       Base .pos keeps a neutral background so app.js's plain
+       `<span class="pos">WR</span>` markup still renders; the
+       per-position variants are progressive enhancement. */
+    .pos { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+           font-family: var(--mono); background: var(--line-strong); color: var(--ink-dim); }
+    .pos-QB { background: rgba(61,128,245,.18); color: var(--qb); }
+    .pos-RB { background: rgba(62,207,116,.18); color: var(--rb); }
+    .pos-WR { background: rgba(232,168,56,.18); color: var(--wr); }
+    .pos-TE { background: rgba(180,124,245,.18); color: var(--te); }
+    .pos-K, .pos-DEF { background: rgba(138,149,168,.18); color: var(--k); }
+
+    /* ── COMPAT LAYER: classes the live app.js emits (from the old skin),
+          restyled with the new tokens. Do not remove without grepping app.js. ── */
+    .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .summary .stat { background: var(--surface); border: 1px solid var(--line);
+                     border-radius: 6px; padding: 8px 14px; font-size: 10px;
+                     color: var(--ink-dim); text-transform: uppercase;
+                     letter-spacing: .06em; font-weight: 600; }
+    .summary .stat b { display: block; font: 700 18px/1.2 var(--mono); color: var(--ink);
+                       margin-top: 3px; font-variant-numeric: tabular-nums;
+                       text-transform: none; letter-spacing: 0; }
+    .pos-good { color: var(--good); }
+    .pos-bad { color: var(--bad); }
+
+    /* ── SIGNAL TAGS / VALUE BARS / ARB / TOOLTIP / STATES (from redesign) ── */
+    .signal { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+              font-family: var(--mono); letter-spacing: .04em; }
+    .signal-buy  { background: var(--good-dim); color: var(--good); border: 1px solid rgba(62,207,116,.25); }
+    .signal-sell { background: var(--bad-dim); color: var(--bad); border: 1px solid rgba(245,96,90,.25); }
+    .signal-hold { background: var(--warn-dim); color: var(--warn); border: 1px solid rgba(232,168,56,.25); }
+    .value-bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .value-bar { flex: 1; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+    .value-bar-fill { height: 100%; border-radius: 2px; }
+    .arb-pos { color: var(--good); font-weight: 700; }
+    .arb-neg { color: var(--bad); font-weight: 700; }
+    [data-tip] { position: relative; cursor: help; }
+    [data-tip]::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 6px);
+      left: 50%; transform: translateX(-50%); white-space: nowrap; background: #0d1117;
+      border: 1px solid var(--line-strong); color: var(--ink); font-size: 11px; padding: 4px 8px;
+      border-radius: 5px; pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 10; }
+    [data-tip]:hover::after { opacity: 1; }
+    .state-msg { padding: 40px 20px; text-align: center; color: var(--ink-dim); font-size: 13px; }
+    .state-msg code { font-family: var(--mono); color: var(--ink); background: var(--surface);
+                      padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    .chart-wrap { width: 100%; }
+  </style>
+</head>
+<body>
+
+  <!-- ASSET TAPE — visual shell only. No fabricated players: the placeholder
+       states what wires it. To light it up, populate #tapeInner from app.js
+       with real top-|FP−FC| players and remove the .unwired class. -->
+  <div class="tape-wrap">
+    <div class="tape-label">ASSET TAPE</div>
+    <div class="tape-scroll">
+      <div class="tape-inner unwired" id="tapeInner">
+        <div class="tape-item placeholder">awaiting feed — wired by app.js from the win-now wedge (|VBD − FP|, real values only)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-brand">
+      <div class="wordmark">Roster Portfolio &amp; Asset Valuation</div>
+      <div class="tagline">Dynasty Intelligence Platform</div>
+    </div>
+    <div class="header-controls">
+      <select id="league"></select>
+      <nav>
+        <a class="here" href="./index.html" aria-current="page">Dashboard</a>
+        <a href="./model_lab.html">Model Lab</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page">
+
+    <!-- KPI STRIP — honest empty states. No numbers are hardcoded here:
+         Portfolio Value / HHI can be wired from data app.js already has;
+         Sharpe and Alpha do not exist yet anywhere in the warehouse
+         (roadmap Buckets C and B) and stay dashed until their engines ship. -->
+    <div class="grid-4">
+      <div class="kpi unwired" id="kpiPortfolio">
+        <div class="kpi-label" data-tip="Sum of roster market value (FantasyPros 2QB)">Portfolio Value</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub"><span class="delta-tag todo">UNWIRED</span><span>populate from app.js league summary</span></div>
+      </div>
+      <div class="kpi unwired" id="kpiHhi">
+        <div class="kpi-label" data-tip="Herfindahl-Hirschman Index of positional value concentration">HHI Concentration</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub"><span class="delta-tag todo">UNWIRED</span><span>populate from app.js diagnostics</span></div>
+      </div>
+      <div class="kpi unwired" id="kpiValueShare">
+        <div class="kpi-label" data-tip="Share of total league market value (FantasyPros 2QB)">Value Share</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub"><span class="delta-tag todo">UNWIRED</span><span>league leader until a team is selected</span></div>
+      </div>
+      <div class="kpi unwired" id="kpiProdShare">
+        <div class="kpi-label" data-tip="Share of league VBD (points over replacement) — replacement-adjusted, not raw PPG">Production Share</div>
+        <div class="kpi-value">—</div>
+        <div class="kpi-sub"><span class="delta-tag todo">UNWIRED</span><span>needs /production route (server patch)</span></div>
+      </div>
+    </div>
+
+    <!-- LOAD-BEARING PANELS — same ids as the live dashboard; app.js fills them. -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Team Valuation &amp; Concentration</h2>
+      </div>
+      <div class="chart-wrap" id="valueChart" style="height:420px"></div>
+    </section>
+
+    <div class="section-gap"></div>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Diagnostics <span class="panel-sub">— click a team to drill in</span></h2>
+      </div>
+      <div id="diagTable"></div>
+    </section>
+
+    <div class="section-gap"></div>
+
+    <div class="grid-2">
+      <!-- New from the redesign: shipped as a styled empty state, no mock rows.
+           Lights up when an arbitrage endpoint exists. -->
+      <section class="panel" id="arbPanel">
+        <div class="panel-head">
+          <h2>Market Intelligence <span class="panel-sub">— FP vs FC arbitrage signals</span></h2>
+        </div>
+        <div class="state-msg" id="arbTable">
+          Awaiting arbitrage feed — wire from app.js or a
+          <code>/api/league/:id/arbitrage</code> endpoint.<br>
+          <span style="font-size:11px;color:var(--ink-faint)">Values are non-TEP
+          (FP/FC are not TEP-segmented; deltas at TE are flagged unreliable per methodology).</span>
+        </div>
+      </section>
+
+      <section class="panel" id="triPanel" style="display:none">
+        <div class="panel-head">
+          <h2>Win-Now vs Dynasty <span class="panel-sub">— production value (VBD) vs market price (FP; FC swap pending /value endpoint); off the diagonal = signal</span></h2>
+        </div>
+        <div id="triChart" style="height:480px"></div>
+      </section>
+    </div>
+
+    <div class="section-gap"></div>
+
+    <section class="panel" id="rosterPanel" style="display:none">
+      <div class="panel-head">
+        <h2 id="rosterTitle">Roster Detail</h2>
+      </div>
+      <div class="summary" id="rosterSummary"></div>
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:24px;align-items:start">
+        <div id="posChart" style="height:280px"></div>
+        <div id="rosterTable"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
