@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fmt } from '$lib/constants';
+  import * as Table from '$lib/components/ui/table';
 
   let { leagueId }: { leagueId: string } = $props();
   let rows: any[] = $state([]);
@@ -27,35 +28,35 @@
   {#if rows.length === 0}
     <div class="text-center text-ink-dim text-xs py-10">Awaiting arbitrage feed</div>
   {:else}
-    <table class="w-full border-collapse text-xs">
-      <thead>
-        <tr class="border-b border-line">
-          <th class="text-left text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">Player</th>
-          <th class="text-left text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">Pos</th>
-          <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">FP</th>
-          <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">FC</th>
-          <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">Delta</th>
-          <th class="text-left text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">Signal</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table.Root>
+      <Table.Header>
+        <Table.Row>
+          <Table.Head>Player</Table.Head>
+          <Table.Head>Pos</Table.Head>
+          <Table.Head class="text-right">FP</Table.Head>
+          <Table.Head class="text-right">FC</Table.Head>
+          <Table.Head class="text-right">Delta</Table.Head>
+          <Table.Head>Signal</Table.Head>
+        </Table.Row>
+      </Table.Header>
+      <Table.Body>
         {#each rows.slice(0, 10) as r}
-          <tr class="border-b border-line">
-            <td class="px-3 py-2 text-ink">{r.player_name}</td>
-            <td class="px-3 py-2"><span class="pos pos-{r.position}">{r.position}</span></td>
-            <td class="px-3 py-2 text-right font-mono text-ink">{fmt(Math.round(r.fp_market_value))}</td>
-            <td class="px-3 py-2 text-right font-mono text-ink">{fmt(Math.round(r.fc_market_value))}</td>
-            <td class="px-3 py-2 text-right font-mono">
+          <Table.Row>
+            <Table.Cell>{r.player_name}</Table.Cell>
+            <Table.Cell><span class="pos pos-{r.position}">{r.position}</span></Table.Cell>
+            <Table.Cell class="text-right font-mono">{fmt(Math.round(r.fp_market_value))}</Table.Cell>
+            <Table.Cell class="text-right font-mono">{fmt(Math.round(r.fc_market_value))}</Table.Cell>
+            <Table.Cell class="text-right font-mono">
               <span class={r.arb_delta_fp_minus_fc > 0 ? 'arb-pos' : 'arb-neg'}>
                 {r.arb_delta_fp_minus_fc > 0 ? '+' : ''}{fmt(Math.round(r.arb_delta_fp_minus_fc))}
               </span>
-            </td>
-            <td class="px-3 py-2"><span class="signal {signal(r.arb_delta_fp_minus_fc)}">
+            </Table.Cell>
+            <Table.Cell><span class="signal {signal(r.arb_delta_fp_minus_fc)}">
               {r.arb_delta_fp_minus_fc > 500 ? 'BUY' : r.arb_delta_fp_minus_fc < -500 ? 'SELL' : 'HOLD'}
-            </span></td>
-          </tr>
+            </span></Table.Cell>
+          </Table.Row>
         {/each}
-      </tbody>
-    </table>
+      </Table.Body>
+    </Table.Root>
   {/if}
 </section>

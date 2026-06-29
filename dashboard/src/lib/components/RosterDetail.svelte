@@ -1,5 +1,6 @@
 <script lang="ts">
   import PlotlyChart from './PlotlyChart.svelte';
+  import * as Table from '$lib/components/ui/table';
   import { POS_COLOR, INK, fmt, pctShare } from '$lib/constants';
 
   let { rosterId, assets, meta, diagnostics, production, projected = [] }: {
@@ -67,38 +68,38 @@
     <div class="grid grid-cols-[300px_1fr] gap-6 items-start">
       <PlotlyChart data={donutData} layout={donutLayout} style="height:280px" />
       <div class="overflow-x-auto">
-        <table class="w-full border-collapse text-xs">
-          <thead>
-            <tr class="border-b border-line">
-              <th class="text-left text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">Player</th>
-              <th class="text-left text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">Pos</th>
-              <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">Age</th>
-              <th class="text-left text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">Team</th>
-              <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">FP</th>
-              <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">FC</th>
-              <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">VBD</th>
-              <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">PPG</th>
-              <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">Arb Δ</th>
-              <th class="text-right text-ink-dim font-semibold uppercase tracking-wider text-[10px] px-3 py-2">30d</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table.Root>
+          <Table.Header>
+            <Table.Row>
+              <Table.Head>Player</Table.Head>
+              <Table.Head>Pos</Table.Head>
+              <Table.Head class="text-right">Age</Table.Head>
+              <Table.Head>Team</Table.Head>
+              <Table.Head class="text-right">FP</Table.Head>
+              <Table.Head class="text-right">FC</Table.Head>
+              <Table.Head class="text-right">VBD</Table.Head>
+              <Table.Head class="text-right">PPG</Table.Head>
+              <Table.Head class="text-right">Arb Δ</Table.Head>
+              <Table.Head class="text-right">30d</Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
             {#each assets as a}
-              <tr class="border-b border-line">
-                <td class="px-3 py-2 text-ink">{a.player_name || '–'}</td>
-                <td class="px-3 py-2"><span class="pos pos-{a.position || ''}">{a.position || '?'}</span></td>
-                <td class="px-3 py-2 text-right font-mono text-ink">{a.age ?? '–'}</td>
-                <td class="px-3 py-2 text-ink">{a.nfl_team || '–'}</td>
-                <td class="px-3 py-2 text-right font-mono text-ink">{fmt(a.fp_market_value)}</td>
-                <td class="px-3 py-2 text-right font-mono text-ink">{fmt(a.fc_market_value)}</td>
-                <td class="px-3 py-2 text-right font-mono text-ink">{fmt(a.vbd_value)}</td>
-                <td class="px-3 py-2 text-right font-mono text-ink">{a.ppg != null ? Number(a.ppg).toFixed(1) : '–'}</td>
-                <td class="px-3 py-2 text-right font-mono">{#if a.arb_delta_fp_minus_fc != null}<span class={a.arb_delta_fp_minus_fc > 0 ? 'text-good font-bold' : 'text-bad font-bold'}>{a.arb_delta_fp_minus_fc > 0 ? '+' : ''}{fmt(Math.round(a.arb_delta_fp_minus_fc))}</span>{:else}–{/if}</td>
-                <td class="px-3 py-2 text-right font-mono text-ink">{a.fc_trend_30day != null ? fmt(Math.round(a.fc_trend_30day)) : '–'}</td>
-              </tr>
+              <Table.Row>
+                <Table.Cell>{a.player_name || '–'}</Table.Cell>
+                <Table.Cell><span class="pos pos-{a.position || ''}">{a.position || '?'}</span></Table.Cell>
+                <Table.Cell class="text-right font-mono">{a.age ?? '–'}</Table.Cell>
+                <Table.Cell>{a.nfl_team || '–'}</Table.Cell>
+                <Table.Cell class="text-right font-mono">{fmt(a.fp_market_value)}</Table.Cell>
+                <Table.Cell class="text-right font-mono">{fmt(a.fc_market_value)}</Table.Cell>
+                <Table.Cell class="text-right font-mono">{fmt(a.vbd_value)}</Table.Cell>
+                <Table.Cell class="text-right font-mono">{a.ppg != null ? Number(a.ppg).toFixed(1) : '–'}</Table.Cell>
+                <Table.Cell class="text-right font-mono">{#if a.arb_delta_fp_minus_fc != null}<span class={a.arb_delta_fp_minus_fc > 0 ? 'text-good font-bold' : 'text-bad font-bold'}>{a.arb_delta_fp_minus_fc > 0 ? '+' : ''}{fmt(Math.round(a.arb_delta_fp_minus_fc))}</span>{:else}–{/if}</Table.Cell>
+                <Table.Cell class="text-right font-mono">{a.fc_trend_30day != null ? fmt(Math.round(a.fc_trend_30day)) : '–'}</Table.Cell>
+              </Table.Row>
             {/each}
-          </tbody>
-        </table>
+          </Table.Body>
+        </Table.Root>
       </div>
     </div>
   </div>

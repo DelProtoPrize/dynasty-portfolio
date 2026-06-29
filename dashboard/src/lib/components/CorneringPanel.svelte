@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PlotlyChart from './PlotlyChart.svelte';
+  import * as Button from '$lib/components/ui/button';
   import { POS_COLOR, INK, GRID } from '$lib/constants';
 
   let { leagueId, diagnostics = [] }: { leagueId: string; diagnostics?: any[] } = $props();
@@ -83,15 +84,8 @@
     <div class="flex items-center justify-between px-5 py-3 border-b border-line">
       <h2 class="text-sm font-semibold text-ink m-0">Positional Cornering <span class="text-ink-dim font-normal">— who controls scarce production</span></h2>
       <div class="flex gap-1">
-        <button
-          class="px-2.5 py-1 rounded text-[11px] cursor-pointer border {basis === 'realized' ? 'bg-panel text-ink border-line-strong' : 'bg-surface text-ink-dim border-line'}"
-          onclick={() => basis = 'realized'}
-        >Realized</button>
-        <button
-          class="px-2.5 py-1 rounded text-[11px] border {!cache.projected ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'} {basis === 'projected' ? 'bg-panel text-ink border-line-strong' : 'bg-surface text-ink-dim border-line'}"
-          disabled={!cache.projected}
-          onclick={() => basis = 'projected'}
-        >Projected</button>
+        <Button.Root variant={basis === 'realized' ? 'active' : 'default'} onclick={() => basis = 'realized'}>Realized</Button.Root>
+        <Button.Root variant={basis === 'projected' ? 'active' : 'default'} disabled={!cache.projected} onclick={() => basis = 'projected'}>Projected</Button.Root>
       </div>
     </div>
     <div class="grid grid-cols-[1fr_200px] gap-4 items-start p-4">
