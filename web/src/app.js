@@ -24,6 +24,10 @@ let currentLeague = null;
 let currentRows = [];
 let prodByRoster = null;   // roster_id -> production_vbd (null = endpoint absent)
 let prodTotal = 0;
+let projByRoster = null;   // projected basis (m1); null until project_production.py + route v2
+let projTotal = 0;
+let cornerCache = { realized: null, projected: null };  // per-league fetch cache
+let cornerBasis = 'realized';
 let valueTotal = 0;
 
 /* ── KPI strip (null-safe: absent on old index.html) ───────────────────── */
@@ -96,6 +100,8 @@ function rosterKpis(meta) {
     hhiTone(h));
 
   const { vShare, pShare } = shares(meta);
+  const projShare = projByRoster && projTotal > 0
+    ? (projByRoster[meta.roster_id] || 0) / projTotal : null;
   setKpi('kpiValueShare', vShare != null ? (vShare * 100).toFixed(1) + '%' : '–',
     `<span class="delta-tag flat">TEAM</span><span>${meta.owner_name || 'roster'} share of league value</span>`,
     'kpi-accent');
@@ -107,8 +113,9 @@ function rosterKpis(meta) {
     // current production — could be youth, injury, or SF-QB scarcity. The
     // sign is known; the cause needs the roster table to confirm.
     const word = gap > 0.01 ? 'win-now tilt' : gap < -0.01 ? 'value ahead of production' : 'balanced';
+    const projNote = projShare != null ? ` · proj ${(projShare * 100).toFixed(1)}%` : '';
     setKpi('kpiProdShare', (pShare * 100).toFixed(1) + '%',
-      `<span class="delta-tag ${tag}">${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}pp vs value</span><span>${word}</span>`,
+      `<span class="delta-tag ${tag}">${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}pp vs value</span><span>${word}${projNote}</span>`,
       gap > 0.01 ? 'kpi-good' : gap < -0.01 ? 'kpi-warn' : 'kpi-accent');
   } else {
     setKpi('kpiProdShare', '–',
@@ -117,16 +124,18 @@ function rosterKpis(meta) {
   }
 }
 
-/* ── Tape: win-now wedge = |VBD − FP|, the scatter's off-diagonal players.
+/* ── Tape: win-now wedge = |VBD − FC|, the scatter's off-diagonal players.
+      FC (settings-aware) is the market side per the locked rule; players
+      without an FC value (deep bench, mostly rookies) simply don't tape.
       Fed by the SAME /value rows the triangulation fetches — nothing extra,
       nothing invented. Stays in placeholder state if the VBD layer is empty. */
 function wireTape(rows) {
   const wrap = document.getElementById('tapeInner');
   if (!wrap) return;
-  const usable = rows.filter((d) => d.fp_market_value != null && d.vbd_value != null);
+  const usable = rows.filter((d) => d.fc_market_value != null && d.vbd_value != null);
   if (!usable.length) return; // keep honest placeholder
   const items = [...usable]
-    .map((d) => ({ ...d, wedge: d.vbd_value - d.fp_market_value }))
+    .map((d) => ({ ...d, wedge: d.vbd_value - d.fc_market_value }))
     .sort((a, b) => Math.abs(b.wedge) - Math.abs(a.wedge))
     .slice(0, 14)
     .map((d) => {
@@ -134,9 +143,9 @@ function wireTape(rows) {
       const wCol = d.wedge > 0 ? '#3ecf74' : '#f5605a';
       return `<div class="tape-item">
         <span class="pos-badge" style="background:${col}22;color:${col}">${d.position}</span>
-        <span class="name">${d.player_name}</span>
-        <span class="val">FP ${fmt(Math.round(d.fp_market_value))}</span>
-        <span class="delta" style="color:${wCol}" title="VBD minus FP market value">${d.wedge > 0 ? '+' : ''}${fmt(Math.round(d.wedge))} wedge</span>
+        <span class="name">${d.player_name}${d.years_exp === 0 ? '·R' : ''}</span>
+        <span class="val">FC ${fmt(Math.round(d.fc_market_value))}</span>
+        <span class="delta" style="color:${wCol}" title="VBD minus FC market value">${d.wedge > 0 ? '+' : ''}${fmt(Math.round(d.wedge))} wedge</span>
       </div>`;
     }).join('');
   wrap.innerHTML = items + items; // duplicated for seamless loop
@@ -159,7 +168,7 @@ async function render(leagueId) {
   const rows = await api(`/leagues/${leagueId}/diagnostics`);
   currentRows = rows;
   // Production sums (graceful: cards stay dashed if the route isn't deployed).
-  prodByRoster = null; prodTotal = 0;
+  prodByRoster = null; prodTotal = 0; projByRoster = null; projTotal = 0;
   try {
     const prod = await api(`/leagues/${leagueId}/production`);
     if (Array.isArray(prod)) {
@@ -167,6 +176,13 @@ async function render(leagueId) {
       prodTotal = prod.reduce((s, p) => s + (p.production_vbd || 0), 0);
     }
   } catch { /* endpoint absent — leave null */ }
+  try {
+    const proj = await api(`/leagues/${leagueId}/production?basis=projected`);
+    if (Array.isArray(proj) && proj.length) {
+      projByRoster = Object.fromEntries(proj.map((p) => [p.roster_id, p.production_vbd || 0]));
+      projTotal = proj.reduce((s, p) => s + (p.production_vbd || 0), 0);
+    }
+  } catch { /* projection layer not built — pills show a dash */ }
   leagueKpis(rows);
 
   // Horizontal bar of team value, colored by HHI concentration (red = top-heavy).
@@ -205,6 +221,144 @@ async function render(leagueId) {
   });
 
   renderTriangulation(leagueId);
+  renderCornering(leagueId);
+}
+
+/* ── Positional Cornering (Step 4 UI) ──────────────────────────────────────
+   Who controls the scarce production, per position, against the FIXED
+   realized replacement bar. Both bases come from the same route; HHIs are
+   never compared across bases (projected runs mechanically hot — shrinkage
+   thins the elite pool). The durability line is a WITHIN-TEAM realized→
+   projected share delta, rendered as text on the diagnostic strip — the one
+   cross-basis read the caveat permits. */
+const ownerName = (rid) =>
+  (currentRows.find((r) => r.roster_id === rid) || {}).owner_name || `Roster ${rid}`;
+const MUTED_SEG = ['#2a3340', '#242c38', '#1f2630', '#343e4d'];
+
+async function renderCornering(leagueId) {
+  const chartEl = document.getElementById('cornerChart');
+  if (!chartEl) return;                       // old page — feature absent
+  cornerCache = { realized: null, projected: null };
+  cornerBasis = 'realized';
+  try {
+    const r = await api(`/leagues/${leagueId}/cornering?basis=realized`);
+    if (r && Array.isArray(r.league) && r.league.length) cornerCache.realized = r;
+  } catch { /* route absent — empty state stays */ }
+  try {
+    const r = await api(`/leagues/${leagueId}/cornering?basis=projected`);
+    if (r && Array.isArray(r.league) && r.league.length) cornerCache.projected = r;
+  } catch { /* projection layer absent — toggle disables below */ }
+
+  const toggle = document.getElementById('cornerToggle');
+  if (toggle && !toggle.dataset.wired) {
+    toggle.dataset.wired = '1';
+    toggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-basis]');
+      if (!btn || btn.disabled) return;
+      cornerBasis = btn.dataset.basis;
+      toggle.querySelectorAll('button').forEach((b) =>
+        b.setAttribute('aria-pressed', String(b.dataset.basis === cornerBasis)));
+      drawCornering();
+    });
+  }
+  if (toggle) {
+    const projBtn = toggle.querySelector('button[data-basis="projected"]');
+    if (projBtn) {
+      projBtn.disabled = !cornerCache.projected;
+      projBtn.title = cornerCache.projected ? '' :
+        'Projected basis unavailable — run project_production.py, then cornering_metrics.py';
+    }
+  }
+  drawCornering();
+}
+
+function drawCornering() {
+  const chartEl = document.getElementById('cornerChart');
+  const cardsEl = document.getElementById('cornerCards');
+  const diagEl = document.getElementById('cornerDiag');
+  if (!chartEl) return;
+  const data = cornerCache[cornerBasis];
+  if (!data) {
+    chartEl.innerHTML = `<div class="state-msg">Cornering tables not built yet — run
+      <code>python project_production.py</code> → <code>python cornering_metrics.py</code></div>`;
+    if (cardsEl) cardsEl.innerHTML = '';
+    if (diagEl) diagEl.style.display = 'none';
+    return;
+  }
+
+  const league = [...data.league].sort((a, b) => (b.hhi ?? 0) - (a.hhi ?? 0));
+  const positions = league.map((l) => l.position);
+  const nTeams = currentRows.length || 14;
+  const evenHhi = 1 / nTeams;
+
+  // one trace per "share rank within position" so segment colors are per-cell:
+  // top holder gets the position color, the field gets muted shades.
+  const byPos = {};
+  for (const row of data.rosters) (byPos[row.position] ??= []).push(row);
+  for (const posRows of Object.values(byPos)) posRows.sort((a, b) => (b.vona_share ?? 0) - (a.vona_share ?? 0));
+  const maxLen = Math.max(...Object.values(byPos).map((r) => r.length), 0);
+  const traces = [];
+  for (let k = 0; k < maxLen; k++) {
+    const xs = [], cols = [], cd = [];
+    for (const pos of positions) {
+      const row = (byPos[pos] || [])[k];
+      xs.push(row ? row.vona_share : 0);
+      cols.push(k === 0 ? (POS_COLOR[pos] || '#8a95a8') : MUTED_SEG[k % MUTED_SEG.length]);
+      cd.push(row ? [ownerName(row.roster_id), (row.vona_share * 100).toFixed(1), row.elite_count] : ['', '', '']);
+    }
+    traces.push({
+      type: 'bar', orientation: 'h', x: xs, y: positions, marker: { color: cols },
+      customdata: cd, showlegend: false,
+      hovertemplate: '%{customdata[0]}: %{customdata[1]}% of %{y} VONA · %{customdata[2]} startable<extra></extra>',
+    });
+  }
+  Plotly.react('cornerChart', traces, {
+    barmode: 'stack', margin: { l: 44, r: 10, t: 6, b: 34 },
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+    font: { color: INK, size: 12 },
+    xaxis: { tickformat: '.0%', gridcolor: GRID, range: [0, 1], zeroline: false },
+    yaxis: { autorange: 'reversed' },
+  }, { displayModeBar: false, responsive: true });
+
+  // right: HHI cards
+  if (cardsEl) {
+    const label = (h) => h / evenHhi > 1.8 ? 'concentrated' : h / evenHhi > 1.3 ? 'tilted' : 'balanced';
+    cardsEl.innerHTML = league.map((l, i) => `
+      <div class="hhi-card${i === 0 ? ' cornered' : ''}">
+        <div class="hc-row">
+          <span class="hc-pos" style="color:${POS_COLOR[l.position] || '#8a95a8'}">${l.position}</span>
+          <span class="hc-hhi">${l.hhi != null ? l.hhi.toFixed(3) : '–'}</span>
+        </div>
+        <div class="hc-sub">${l.hhi != null ? label(l.hhi) : 'no data'} · top: ${ownerName(l.top_roster_id)}
+          ${l.n_unprojected ? ` · ${l.n_unprojected} unprojected` : ''}</div>
+      </div>`).join('');
+  }
+
+  // bottom: plain-language diagnostic for the most-cornered position
+  if (diagEl) {
+    const top = league[0];
+    const rows = byPos[top.position] || [];
+    const lead = rows[0], second = rows[1];
+    if (!lead) { diagEl.style.display = 'none'; return; }
+    let line = `<b>${ownerName(lead.roster_id)}</b> holds ${lead.elite_count} of ${top.elite_total} startable ${top.position}s — carrying <b>${(lead.vona_share * 100).toFixed(1)}%</b> of league ${top.position} VONA`;
+    if (second) {
+      line += `, vs ${ownerName(second.roster_id)}'s ${second.elite_count} at ${(second.vona_share * 100).toFixed(1)}%`;
+      if (lead.elite_count <= second.elite_count) line += '. Quality cornering, not body-count';
+    }
+    line += '.';
+    // durability: within-team realized→projected delta, text only (per caveat)
+    if (cornerBasis === 'realized' && cornerCache.projected) {
+      const projRows = cornerCache.projected.rosters
+        .filter((r) => r.position === top.position);
+      const mine = projRows.find((r) => r.roster_id === lead.roster_id);
+      if (mine && mine.vona_share != null) {
+        const holds = mine.vona_share >= lead.vona_share - 0.01;
+        line += `<span class="durability">${top.position} corner: ${(lead.vona_share * 100).toFixed(1)}% → ${(mine.vona_share * 100).toFixed(1)}% projected · ${holds ? 'corner holds' : 'moat depreciating'}</span>`;
+      }
+    }
+    diagEl.innerHTML = line;
+    diagEl.style.display = 'block';
+  }
 }
 
 // Win-now (VBD, production over replacement) vs dynasty (FP market price). Each point
@@ -218,17 +372,26 @@ async function renderTriangulation(leagueId) {
   panel.style.display = 'block';
   wireTape(rows);
 
+  // FC on x (settings-aware market). Players without an FC value are
+  // excluded and COUNTED — shown, never silently dropped or FP-substituted
+  // (mixing currencies on one axis would be fabrication by interpolation).
+  const plotRows = rows.filter((d) => d.fc_market_value != null);
+  const nNoFc = rows.length - plotRows.length;
   const colors = { QB: '#3d80f5', RB: '#3ecf74', WR: '#e8a838', TE: '#b47cf5' };
-  const maxv = Math.max(1, ...rows.map((d) => Math.max(d.fp_market_value || 0, d.vbd_value || 0)));
+  const maxv = Math.max(1, ...plotRows.map((d) => Math.max(d.fc_market_value || 0, d.vbd_value || 0)));
   const traces = ['QB', 'RB', 'WR', 'TE'].map((pos) => {
-    const pr = rows.filter((d) => d.position === pos);
+    const pr = plotRows.filter((d) => d.position === pos);
     return {
       type: 'scatter', mode: 'markers', name: pos,
-      x: pr.map((d) => d.fp_market_value),
+      x: pr.map((d) => d.fc_market_value),
       y: pr.map((d) => d.vbd_value),
-      text: pr.map((d) => `${d.player_name}<br>${Number(d.ppg).toFixed(1)} ppg · VORP ${Number(d.vorp).toFixed(1)}`),
-      marker: { color: colors[pos], size: 9, opacity: 0.82, line: { color: '#161b22', width: 1 } },
-      hovertemplate: '%{text}<br>FP %{x:,.0f} · VBD %{y:,.0f}<extra>' + pos + '</extra>',
+      text: pr.map((d) => `${d.player_name}${d.years_exp === 0 ? ' (R)' : ''}<br>${Number(d.ppg).toFixed(1)} ppg · VORP ${Number(d.vorp).toFixed(1)}`),
+      marker: {
+        color: colors[pos], size: 9, opacity: 0.82,
+        symbol: pr.map((d) => (d.years_exp === 0 ? 'diamond-open' : 'circle')),
+        line: { color: '#161b22', width: 1 },
+      },
+      hovertemplate: '%{text}<br>FC %{x:,.0f} · VBD %{y:,.0f}<extra>' + pos + '</extra>',
     };
   });
   traces.push({
@@ -239,7 +402,7 @@ async function renderTriangulation(leagueId) {
   Plotly.react('triChart', traces, {
     margin: { l: 66, r: 20, t: 10, b: 52 },
     paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', font: { color: INK },
-    xaxis: { title: 'Dynasty value — FantasyPros', gridcolor: GRID, zeroline: false },
+    xaxis: { title: 'Dynasty value — FantasyCalc (settings-aware)', gridcolor: GRID, zeroline: false },
     yaxis: { title: 'Win-now value — VBD (pts over replacement)', gridcolor: GRID, zeroline: false },
     legend: { orientation: 'h', y: 1.1 },
     annotations: [
@@ -247,6 +410,10 @@ async function renderTriangulation(leagueId) {
         text: 'produces now · market discounts (sell-high)', font: { size: 10, color: '#8a95a8' } },
       { x: maxv * 0.96, y: maxv * 0.05, xanchor: 'right', showarrow: false,
         text: 'market pays ahead of production (youth / injury / SF-QB)', font: { size: 10, color: '#8a95a8' } },
+      ...(nNoFc > 0 ? [{ x: maxv * 0.96, y: maxv * 0.0, xanchor: 'right', yanchor: 'top', showarrow: false,
+        text: `${nNoFc} player${nNoFc === 1 ? '' : 's'} without an FC value not shown · ◇ = rookie`, font: { size: 9, color: '#3d4756' } }]
+        : [{ x: maxv * 0.96, y: maxv * 0.0, xanchor: 'right', yanchor: 'top', showarrow: false,
+        text: '◇ = rookie', font: { size: 9, color: '#3d4756' } }]),
     ],
   }, { displayModeBar: false, responsive: true });
 }
@@ -272,7 +439,8 @@ async function drillRoster(rosterId) {
     <div class="stat">Assets valued<b>${valued.length}</b></div>
     <div class="stat">Value-weighted age<b>${wAge ? wAge.toFixed(1) : '–'}</b></div>
     <div class="stat">Value share<b>${pctShare(meta.team_value, valueTotal)}</b></div>
-    <div class="stat">Production share<b>${prodByRoster ? pctShare(prodByRoster[rosterId], prodTotal) : '–'}</b></div>`;
+    <div class="stat">Prod. share (realized)<b>${prodByRoster ? pctShare(prodByRoster[rosterId], prodTotal) : '–'}</b></div>
+    <div class="stat" title="m1 projection — at preseason as-ofs statistically ≈ the ECR baseline (see Model Lab); its validated edge is in-season">Prod. share (projected)<b>${projByRoster ? pctShare(projByRoster[rosterId], projTotal) : '–'}</b></div>`;
 
   // Positional value allocation (donut).
   const byPos = {};
@@ -301,7 +469,7 @@ async function drillRoster(rosterId) {
     </tr></thead><tbody>
       ${assets.map((a) => `<tr>
         <td>${a.player_name || '–'}</td>
-        <td><span class="pos pos-${a.position || ''}">${a.position || '?'}</span></td>
+        <td><span class="pos pos-${a.position || ''}">${a.position || '?'}</span>${a.years_exp === 0 ? ' <span class="pos" title="rookie — no NFL production history; projections are dashes by design" style="background:rgba(232,168,56,.18);color:var(--wr)">R</span>' : ''}</td>
         <td class="num">${a.age ?? '–'}</td>
         <td>${a.nfl_team || '–'}</td>
         <td class="num">${fmt(a.fp_market_value)}</td>

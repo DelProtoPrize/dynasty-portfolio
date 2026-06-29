@@ -75,26 +75,39 @@ r.get('/leagues/:id/arbitrage', async (req, res, next) => {
 
 const MISSING_REL = /no such (table|view)|does not exist|relation .* does not exist/i;
 
-// Three-source value triangulation: expert (FP) vs market (FC) vs production (VBD).
-// Off-diagonal players are the signal — what a player PRODUCES (win-now) vs what the
-// dynasty market PAYS (future). Returns [] gracefully if points_model.py hasn't run.
-r.get('/leagues/:id/value', async (req, res, next) => {
-  try {
-    const sql = `
-      SELECT player_name, position, age,
-             fp_market_value, fc_market_value, vbd_value, ppg, vorp
-      FROM v_player_value
-      WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM v_player_value)
-        AND league_id = ?
-        AND vbd_value IS NOT NULL AND fp_market_value IS NOT NULL
-      ORDER BY fc_market_value DESC
-    `;
-    res.json(await query(sql, [req.params.id]));
-  } catch (e) {
-    if (MISSING_REL.test(String(e.message))) return res.json([]); // VBD layer not built yet
-    next(e);
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// REPLACES the existing GET /leagues/:leagueId/value route in
+// server/src/routes/analytics.js. Two changes vs the old route:
+//   1. fc_market_value is served — the Win-Now scatter's x-axis moves to
+//      FantasyCalc (the locked rule: market metrics on FC; FP is a
+//      deterministic exponential of ordinal ranks).
+//   2. years_exp (LEFT JOIN dim_players) — rookie designation downstream.
+// Columns are a superset of what app.js reads; SQL verified against the
+// warehouse (Drew: 315 rows, FC populated 310, top-FC ordering sane).
+// ─────────────────────────────────────────────────────────────────────────────
+
+r.get('/leagues/:leagueId/value', async (req, res) => {
+  const lid = req.params.leagueId;
+  const rows = await query(
+    `SELECT v.player_id, v.player_name, v.position, v.roster_id,
+            v.fp_market_value, v.fc_market_value, v.vbd_value,
+            v.ppg, v.vorp,
+            d.years_exp
+     FROM v_player_value v
+     LEFT JOIN dim_players d ON d.player_id = v.player_id
+     WHERE v.league_id = ?
+       AND v.snapshot_date = (
+         SELECT MAX(snapshot_date) FROM v_player_value WHERE league_id = ?
+       )`,
+    [lid, lid]
+  );
+  res.json(rows);
 });
+
+// OPTIONAL one-line companion: if you also want the rookie badge in the
+// roster drill table, add `d.years_exp` (with the same LEFT JOIN dim_players)
+// to your existing /leagues/:leagueId/rosters/:rosterId route's SELECT.
+// app.js renders the badge null-safely either way.
 
 // Roster drill-down: one team's full asset list with values, age, arbitrage, and
 // (if available) production-grounded VBD/PPG. Falls back to the market-only query
@@ -131,25 +144,41 @@ r.get('/leagues/:id/rosters/:rosterId', async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PASTE INTO: server/src/routes/analytics.js — next to the existing routes,
-// ABOVE the `export default r;` line.
-// Matches your file's actual handles: router is `r`, query helper is `query`
-// from ../db.js, called as `await query(sql, [params])`.
-// Placeholders are `?` like your SQLite default; if you run Postgres via
-// DATABASE_URL and your other routes use $1/$2, switch them the same way.
-//
-// VERIFIED against the live warehouse (v_player_value):
-//   pooled:      14 Drew rosters, client-side shares sum to 1.0
-//   ?by=position: positional cut works — e.g. one roster holds 23.6% of
-//                 league RB VBD (the roadmap's "cornering" diagnostic)
+// REPLACES the /leagues/:leagueId/production route from server_production_route.txt
+// (keep ?by=position behavior; adds ?basis=projected).
+// PASTE INTO: server/src/routes/analytics.js, above `export default r;`
+// SQL verified against the warehouse: realized 14 rosters sum 1.0;
+// projected 14 rosters sum 1.0 (after project_production.py has run).
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Per-roster production (VBD = points over replacement), latest snapshot.
-// Default: pooled across positions (the team-dominance number on the KPI card).
-// ?by=position: per-position rows — the endpoint the future cornering panel
-// reads (share of each position's league-wide VBD).
+ 
+// Per-roster production. Two bases, same response shape:
+//   default            -> realized REG-only VBD (v_player_value)
+//   ?basis=projected   -> m1-projected VBD (player_projected_value).
+//      LABEL THAT TRAVELS WITH IT: at preseason as-ofs the projection is
+//      statistically indistinguishable from the flat-ECR baseline (Model Lab,
+//      m1 verdicts); its CI-clearing edge is in-season. Serve it, never
+//      oversell it.
+//   ?by=position       -> positional cut (realized basis only for now; the
+//      cornering panel's endpoint).
 r.get('/leagues/:leagueId/production', async (req, res) => {
   const lid = req.params.leagueId;
+  if (req.query.basis === 'projected') {
+    const rows = await query(
+      `SELECT p.roster_id,
+              SUM(p.vbd_proj) AS production_vbd,
+              MAX(p.as_of_date) AS as_of_date,
+              MAX(p.model_id)  AS model_id
+       FROM player_projected_value p
+       WHERE p.league_id = ?
+         AND p.as_of_date = (
+           SELECT MAX(as_of_date) FROM player_projected_value WHERE league_id = ?
+         )
+       GROUP BY p.roster_id
+       ORDER BY p.roster_id`,
+      [lid, lid]
+    );
+    return res.json(rows);
+  }
   const byPos = req.query.by === 'position';
   const rows = await query(
     `SELECT v.roster_id${byPos ? ', v.position' : ''},
@@ -209,6 +238,47 @@ r.get('/leagues/:leagueId/rosters/:rosterId/surplus', async (req, res) => {
     [leagueId, rosterId, leagueId]
   );
   res.json(rows);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PASTE INTO: server/src/routes/analytics.js — above `export default r;`
+// Step 4: positional cornering on the FIXED realized replacement bar.
+// SQL verified against the warehouse (Drew: 56 roster cells, 4 summary rows).
+// Run cornering_metrics.py first or both arrays come back empty (dashes
+// downstream — honest empty state, never fabrication).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Positional VONA cornering. ?basis=realized (default) | projected — both
+// measured against the SAME fixed realized bar (see cornering_metrics.py
+// docstring for the attribution reasoning and the staleness caveat that
+// must also ship in any UI tooltip). Response: { league: [per-position HHI,
+// bar, elite totals, top holder], rosters: [per (position, roster) VONA,
+// share, elite count] }. NOTE: compare HHIs within a basis, not across —
+// projection shrinkage pulls marginal players under the bar, which
+// mechanically concentrates the projected pool.
+r.get('/leagues/:leagueId/cornering', async (req, res) => {
+  const lid = req.params.leagueId;
+  const basis = req.query.basis === 'projected' ? 'projected' : 'realized';
+  const league = await query(
+    `SELECT position, replacement_bar, bar_currency, hhi, elite_total,
+            top_roster_id, top_share, n_unprojected
+     FROM positional_cornering_league
+     WHERE league_id = ? AND basis = ?
+       AND as_of_date = (SELECT MAX(as_of_date) FROM positional_cornering_league
+                         WHERE league_id = ? AND basis = ?)
+     ORDER BY position`,
+    [lid, basis, lid, basis]
+  );
+  const rosters = await query(
+    `SELECT position, roster_id, vona, vona_share, elite_count
+     FROM positional_cornering
+     WHERE league_id = ? AND basis = ?
+       AND as_of_date = (SELECT MAX(as_of_date) FROM positional_cornering
+                         WHERE league_id = ? AND basis = ?)
+     ORDER BY position, vona_share DESC`,
+    [lid, basis, lid, basis]
+  );
+  res.json({ basis, league, rosters });
 });
 
 export default r;
