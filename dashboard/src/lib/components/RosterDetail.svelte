@@ -1,5 +1,6 @@
 <script lang="ts">
   import PlotlyChart from './PlotlyChart.svelte';
+  import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import { POS_COLOR, INK, fmt, pctShare } from '$lib/constants';
 
@@ -48,12 +49,11 @@
   });
 </script>
 
-<section class="bg-panel border border-line rounded-lg overflow-hidden">
-  <div class="flex items-center justify-between px-5 py-3 border-b border-line">
-    <h2 class="text-sm font-semibold text-ink m-0">{meta?.owner_name || 'Roster ' + rosterId} — Roster Detail</h2>
-  </div>
-
-  <div class="px-5 pt-4">
+<Card.Root>
+  <Card.Header>
+    <Card.Title>{meta?.owner_name || 'Roster ' + rosterId} — Roster Detail</Card.Title>
+  </Card.Header>
+  <Card.Content>
     <div class="flex gap-2.5 flex-wrap mb-4">
       <div class="bg-surface border border-line rounded-md px-3.5 py-2 text-[10px] text-ink-dim uppercase tracking-[.06em] font-semibold">Total value<b class="block font-mono font-bold text-lg leading-tight text-ink mt-0.5 normal-case tracking-normal">{fmt(meta?.team_value)}</b></div>
       <div class="bg-surface border border-line rounded-md px-3.5 py-2 text-[10px] text-ink-dim uppercase tracking-[.06em] font-semibold">League rank<b class="block font-mono font-bold text-lg leading-tight text-ink mt-0.5 normal-case tracking-normal">#{meta?.value_rank}</b></div>
@@ -102,5 +102,5 @@
         </Table.Root>
       </div>
     </div>
-  </div>
-</section>
+  </Card.Content>
+</Card.Root>

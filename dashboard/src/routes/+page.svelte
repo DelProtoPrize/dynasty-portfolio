@@ -7,6 +7,7 @@
   import TriangulationChart from '$lib/components/TriangulationChart.svelte';
   import CorneringPanel from '$lib/components/CorneringPanel.svelte';
   import RosterDetail from '$lib/components/RosterDetail.svelte';
+  import * as Card from '$lib/components/ui/card';
   import { fmt, pctShare, median, hhiTone } from '$lib/constants';
 
   let { data } = $props();
@@ -84,12 +85,14 @@
 
 <div class="h-5"></div>
 
-<section class="bg-panel border border-line rounded-lg p-4">
-  <div class="flex items-baseline justify-between mb-3.5">
-    <h2 class="text-[11px] font-bold uppercase tracking-wider text-ink-dim">Diagnostics <span class="text-[11px] text-ink-faint font-normal normal-case tracking-normal ml-2">— click a team to drill in</span></h2>
-  </div>
-  <DiagnosticsTable rows={diagnostics} ondrill={onDrill} />
-</section>
+<Card.Root>
+  <Card.Header>
+    <Card.Title>Diagnostics <span class="text-[11px] text-ink-faint font-normal normal-case tracking-normal ml-2">— click a team to drill in</span></Card.Title>
+  </Card.Header>
+  <Card.Content>
+    <DiagnosticsTable rows={diagnostics} ondrill={onDrill} />
+  </Card.Content>
+</Card.Root>
 
 <div class="h-5"></div>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import PlotlyChart from './PlotlyChart.svelte';
+  import * as Card from '$lib/components/ui/card';
   import { INK, GRID } from '$lib/constants';
 
   let { rows }: { rows: any[] } = $props();
@@ -20,9 +21,11 @@
   });
 </script>
 
-<section class="bg-panel border border-line rounded-lg overflow-hidden">
-  <div class="flex items-center justify-between px-5 py-3 border-b border-line">
-    <h2 class="text-sm font-semibold text-ink m-0">Team Valuation & Concentration</h2>
-  </div>
-  <PlotlyChart {data} {layout} style="height:420px" />
-</section>
+<Card.Root>
+  <Card.Header>
+    <Card.Title>Team Valuation & Concentration</Card.Title>
+  </Card.Header>
+  <Card.Content>
+    <PlotlyChart {data} {layout} style="height:420px" />
+  </Card.Content>
+</Card.Root>

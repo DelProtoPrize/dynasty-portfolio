@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PlotlyChart from './PlotlyChart.svelte';
+  import * as Card from '$lib/components/ui/card';
   import { POS_COLOR, INK, GRID } from '$lib/constants';
 
   let { leagueId }: { leagueId: string } = $props();
@@ -46,10 +47,12 @@
 </script>
 
 {#if visible}
-  <section class="bg-panel border border-line rounded-lg overflow-hidden">
-    <div class="flex items-center justify-between px-5 py-3 border-b border-line">
-      <h2 class="text-sm font-semibold text-ink m-0">Win-Now vs Dynasty <span class="text-ink-dim font-normal">— off the diagonal = signal</span></h2>
-    </div>
-    <PlotlyChart data={traces()} {layout} style="height:480px" />
-  </section>
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Win-Now vs Dynasty <span class="text-ink-dim font-normal">— off the diagonal = signal</span></Card.Title>
+    </Card.Header>
+    <Card.Content>
+      <PlotlyChart data={traces()} {layout} style="height:480px" />
+    </Card.Content>
+  </Card.Root>
 {/if}
