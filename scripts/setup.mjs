@@ -21,9 +21,9 @@ function findPython() {
 }
 
 const pythonCmd = findPython();
-const pip = isWin
-  ? join('.venv', 'Scripts', 'pip.exe')
-  : join('.venv', 'bin', 'pip');
+const venvPython = isWin
+  ? join('.venv', 'Scripts', 'python.exe')
+  : join('.venv', 'bin', 'python');
 
 if (!existsSync('.venv')) {
   console.log('Creating virtual environment...');
@@ -31,8 +31,8 @@ if (!existsSync('.venv')) {
 }
 
 console.log('Installing Python dependencies...');
-execSync(`${pip} install --upgrade pip`, { stdio: 'inherit' });
-execSync(`${pip} install -r etl/requirements.txt`, { stdio: 'inherit' });
+execSync(`${venvPython} -m pip install --upgrade pip`, { stdio: 'inherit' });
+execSync(`${venvPython} -m pip install -r etl/requirements.txt`, { stdio: 'inherit' });
 
 if (!existsSync('etl/data')) {
   mkdirSync('etl/data', { recursive: true });
