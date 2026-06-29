@@ -15,6 +15,7 @@
   let currentLeague = $derived(data.leagueId);
   let diagnostics: any[] = $derived(data.diagnostics as any[]);
   let production: any[] = $derived(data.production as any[]);
+  let projected: any[] = $derived((data as any).projected as any[] || []);
 
   let valueTotal = $derived(diagnostics.reduce((s: number, d: any) => s + (d.team_value || 0), 0));
   let prodTotal = $derived(production.reduce((s: number, d: any) => s + (d.production_vbd || 0), 0));
@@ -99,7 +100,7 @@
 
 <div class="h-5"></div>
 
-<CorneringPanel leagueId={currentLeague} />
+<CorneringPanel leagueId={currentLeague} {diagnostics} />
 
 {#if rosterDetail}
   <div class="h-5"></div>
@@ -109,5 +110,6 @@
     meta={rosterDetail.meta}
     {diagnostics}
     {production}
+    {projected}
   />
 {/if}

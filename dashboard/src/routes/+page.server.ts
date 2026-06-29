@@ -7,7 +7,7 @@ export const load: PageServerLoad = async ({ url, parent }) => {
 
   if (!leagueId) return { leagueId: null, diagnostics: [], production: [] };
 
-  const [diagnostics, production] = await Promise.all([
+  const [diagnostics, production, projected] = await Promise.all([
     query(`
       WITH rp AS (
         SELECT league_id, roster_id, fp_market_value AS v
@@ -49,8 +49,19 @@ export const load: PageServerLoad = async ({ url, parent }) => {
         )
       GROUP BY v.roster_id
       ORDER BY v.roster_id
+    `, [leagueId, leagueId]).catch(() => []),
+    query(`
+      SELECT p.roster_id,
+             SUM(p.vbd_proj) AS production_vbd
+      FROM player_projected_value p
+      WHERE p.league_id = ?
+        AND p.as_of_date = (
+          SELECT MAX(as_of_date) FROM player_projected_value WHERE league_id = ?
+        )
+      GROUP BY p.roster_id
+      ORDER BY p.roster_id
     `, [leagueId, leagueId]).catch(() => [])
   ]);
 
-  return { leagueId, diagnostics, production };
+  return { leagueId, diagnostics, production, projected };
 };

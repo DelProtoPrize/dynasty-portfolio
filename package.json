@@ -11,6 +11,7 @@
     "test": "cd dashboard && npx vitest run",
     "test:e2e": "cd dashboard && npx playwright test",
     "check": "cd dashboard && npm run check",
-    "all": "npm run etl && npm run models && npm run dev"
+    "all": "npm run etl && npm run models && npm run dev",
+    "legacy": "cd server && npm install && node src/index.js"
   }
 }
