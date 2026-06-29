@@ -24,12 +24,15 @@ The browser only talks to our API. External sources are consumed exclusively by 
 ## Running Locally
 
 ```bash
-# ETL
-cd etl && pip install -r requirements.txt && python etl_pipeline.py
+# Full setup + ETL + server
+make all
 
-# Server (serves API + static web/)
-cd server && npm install && npm start  # http://localhost:3000
-# Dev mode with watch: npm run dev
+# Or step by step:
+make install   # creates .venv, installs Python deps + npm deps
+make etl       # runs pipeline using the venv Python
+make server    # http://localhost:3000
+make dev       # server with file watching
+make clean     # nuke .venv and node_modules
 ```
 
 ## Key Technical Decisions
