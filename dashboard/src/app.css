@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #090c10;
+  --color-surface: #111419;
+  --color-panel: #161b22;
+  --color-panel-hover: #1c2230;
+  --color-ink: #dde4ee;
+  --color-ink-dim: #8a95a8;
+  --color-ink-faint: #3d4756;
+  --color-accent: #3d80f5;
+  --color-accent-dim: #1e3a6e;
+  --color-good: #3ecf74;
+  --color-good-dim: #0f3d20;
+  --color-bad: #f5605a;
+  --color-bad-dim: #3d1614;
+  --color-warn: #e8a838;
+  --color-warn-dim: #3d2a0a;
+  --color-line: #1e2530;
+  --color-line-strong: #2a3340;
+  --color-qb: #3d80f5;
+  --color-rb: #3ecf74;
+  --color-wr: #e8a838;
+  --color-te: #b47cf5;
+  --color-k: #8a95a8;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+/* Base styles that Tailwind doesn't cover */
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  min-height: 100vh;
+  font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Position badges — used across many components */
+.pos { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+       font-family: var(--font-mono); background: var(--color-line-strong); color: var(--color-ink-dim); }
+.pos-QB { background: rgba(61,128,245,.18); color: var(--color-qb); }
+.pos-RB { background: rgba(62,207,116,.18); color: var(--color-rb); }
+.pos-WR { background: rgba(232,168,56,.18); color: var(--color-wr); }
+.pos-TE { background: rgba(180,124,245,.18); color: var(--color-te); }
+
+/* Signal badges */
+.signal { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+          font-family: var(--font-mono); letter-spacing: .04em; }
+.signal-buy  { background: var(--color-good-dim); color: var(--color-good); border: 1px solid rgba(62,207,116,.25); }
+.signal-sell { background: var(--color-bad-dim); color: var(--color-bad); border: 1px solid rgba(245,96,90,.25); }
+.signal-hold { background: var(--color-warn-dim); color: var(--color-warn); border: 1px solid rgba(232,168,56,.25); }
+
+.arb-pos { color: var(--color-good); font-weight: 700; }
+.arb-neg { color: var(--color-bad); font-weight: 700; }

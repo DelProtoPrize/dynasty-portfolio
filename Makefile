@@ -3,7 +3,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 DB := etl/data/dynasty.db
 
-.PHONY: all install etl models server dev clean
+.PHONY: all install etl models server dev dashboard-test dashboard-e2e clean
 
 all: install etl models server
 
@@ -13,7 +13,7 @@ $(VENV)/bin/activate:
 
 install: $(VENV)/bin/activate $(DB)
 	$(PIP) install -r etl/requirements.txt
-	cd server && npm install
+	cd dashboard && npm install
 
 $(DB):
 	mkdir -p etl/data
@@ -31,12 +31,18 @@ models: $(VENV)/bin/activate $(DB)
 	$(PYTHON) etl/cornering_metrics.py --db etl/data/dynasty.db
 
 server: etl models
-	cd server && npm start
+	cd dashboard && npm run dev -- --port 3000
 
 dev: etl models
-	cd server && npm run dev
+	cd dashboard && npm run dev -- --port 3000
+
+dashboard-test:
+	cd dashboard && npx vitest run
+
+dashboard-e2e:
+	cd dashboard && npx playwright test
 
 clean:
 	rm -rf $(VENV)
-	rm -rf server/node_modules
+	rm -rf dashboard/node_modules dashboard/.svelte-kit
 	rm -f $(DB)
