@@ -25,6 +25,10 @@ etl: $(VENV)/bin/activate $(DB)
 models: $(VENV)/bin/activate $(DB)
 	DATA_DIR=etl/data $(PYTHON) etl/points_model.py
 	DATA_DIR=etl/data $(PYTHON) etl/lineup_solver.py --db etl/data/dynasty.db
+	$(PYTHON) etl/dp_archive_etl.py --db etl/data/dynasty.db --since 2019-01-01
+	$(PYTHON) etl/outcomes_etl.py --db etl/data/dynasty.db --seasons 2019 2025 --seed-fc
+	$(PYTHON) etl/project_production.py --db etl/data/dynasty.db
+	$(PYTHON) etl/cornering_metrics.py --db etl/data/dynasty.db
 
 server: etl models
 	cd server && npm start

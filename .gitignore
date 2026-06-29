@@ -25,3 +25,6 @@ npm-debug.log*
 # os/editor
 .DS_Store
 .vscode/
+
+# playwright
+.playwright-mcp/
