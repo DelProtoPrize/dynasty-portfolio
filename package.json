@@ -2,19 +2,15 @@
   "name": "dynasty-portfolio",
   "private": true,
   "scripts": {
-    "setup": "python3.12 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -r etl/requirements.txt && cd dashboard && npm install",
-    "setup:win": "py -3.12 -m venv .venv && .venv\\Scripts\\pip install --upgrade pip && .venv\\Scripts\\pip install -r etl/requirements.txt && cd dashboard && npm install",
-    "etl": ".venv/bin/python etl/etl_pipeline.py",
-    "etl:win": ".venv\\Scripts\\python etl/etl_pipeline.py",
-    "models": ".venv/bin/python etl/points_model.py && .venv/bin/python etl/lineup_solver.py --db etl/data/dynasty.db && .venv/bin/python etl/dp_archive_etl.py --db etl/data/dynasty.db --since 2019-01-01 && .venv/bin/python etl/outcomes_etl.py --db etl/data/dynasty.db --seasons 2019 2025 --seed-fc && .venv/bin/python etl/project_production.py --db etl/data/dynasty.db && .venv/bin/python etl/cornering_metrics.py --db etl/data/dynasty.db",
-    "models:win": ".venv\\Scripts\\python etl/points_model.py && .venv\\Scripts\\python etl/lineup_solver.py --db etl/data/dynasty.db && .venv\\Scripts\\python etl/dp_archive_etl.py --db etl/data/dynasty.db --since 2019-01-01 && .venv\\Scripts\\python etl/outcomes_etl.py --db etl/data/dynasty.db --seasons 2019 2025 --seed-fc && .venv\\Scripts\\python etl/project_production.py --db etl/data/dynasty.db && .venv\\Scripts\\python etl/cornering_metrics.py --db etl/data/dynasty.db",
+    "setup": "node scripts/setup.mjs",
+    "etl": "node scripts/run-python.mjs etl/etl_pipeline.py",
+    "models": "node scripts/run-python.mjs etl/points_model.py && node scripts/run-python.mjs etl/lineup_solver.py --db etl/data/dynasty.db && node scripts/run-python.mjs etl/dp_archive_etl.py --db etl/data/dynasty.db --since 2019-01-01 && node scripts/run-python.mjs etl/outcomes_etl.py --db etl/data/dynasty.db --seasons 2019 2025 --seed-fc && node scripts/run-python.mjs etl/project_production.py --db etl/data/dynasty.db && node scripts/run-python.mjs etl/cornering_metrics.py --db etl/data/dynasty.db",
     "dev": "cd dashboard && npm run dev -- --port 3000",
     "build": "cd dashboard && npm run build",
     "preview": "cd dashboard && npm run preview -- --port 3000",
     "test": "cd dashboard && npx vitest run",
     "test:e2e": "cd dashboard && npx playwright test",
     "check": "cd dashboard && npm run check",
-    "all": "npm run etl && npm run models && npm run dev",
-    "all:win": "npm run etl:win && npm run models:win && npm run dev"
+    "all": "npm run etl && npm run models && npm run dev"
   }
 }
