@@ -68,6 +68,25 @@ python -m etl_v2.run --dry-run                      # extract + transform, no wr
 Local uses SQLite (zero config). To deploy, set `DATABASE_URL` to a Postgres
 connection string; the same ETL and dashboard code work without changes.
 
+## Docker
+
+```bash
+# Run everything (Postgres + ETL + dashboard):
+SLEEPER_USERNAME=your_handle docker compose up --build
+
+# Dashboard available at http://localhost:3000
+```
+
+This starts:
+- **Postgres 16** — warehouse database
+- **ETL** — runs the full pipeline, loads Postgres, then exits
+- **Dashboard** — SvelteKit production build on port 3000
+
+To re-run the ETL after the initial load:
+```bash
+docker compose run etl
+```
+
 ## Data sources (public, unauthenticated)
 - **Sleeper** — leagues, rosters, players, drafts, matchups, transactions
 - **DynastyProcess** — FantasyPros ECR values (primary) + the ID crosswalk
