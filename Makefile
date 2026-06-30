@@ -3,9 +3,9 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 DB := etl/data/dynasty.db
 
-.PHONY: all install etl models server dev dashboard-test dashboard-e2e clean
+.PHONY: all install pipeline pipeline-csv seed server dev test test-etl test-e2e clean
 
-all: install etl models server
+all: install pipeline server
 
 $(VENV)/bin/activate:
 	python3.12 -m venv $(VENV)
@@ -19,27 +19,33 @@ $(DB):
 	mkdir -p etl/data
 	touch $(DB)
 
-etl: $(VENV)/bin/activate $(DB)
-	DATA_DIR=etl/data $(PYTHON) etl/etl_pipeline.py
+# --- ETL v2 orchestrator (preferred) ---
+pipeline: $(VENV)/bin/activate $(DB)
+	$(PYTHON) -m etl_v2.run --output db
 
-models: $(VENV)/bin/activate $(DB)
-	DATA_DIR=etl/data $(PYTHON) etl/points_model.py
-	DATA_DIR=etl/data $(PYTHON) etl/lineup_solver.py --db etl/data/dynasty.db
-	$(PYTHON) etl/dp_archive_etl.py --db etl/data/dynasty.db --since 2019-01-01
-	$(PYTHON) etl/outcomes_etl.py --db etl/data/dynasty.db --seasons 2019 2025 --seed-fc
-	$(PYTHON) etl/project_production.py --db etl/data/dynasty.db
-	$(PYTHON) etl/cornering_metrics.py --db etl/data/dynasty.db
+pipeline-csv: $(VENV)/bin/activate $(DB)
+	$(PYTHON) -m etl_v2.run --output csv
 
-server: etl models
+seed: $(VENV)/bin/activate $(DB)
+	$(PYTHON) -m etl_v2.run --input csv
+
+
+# --- Server ---
+server: pipeline
 	cd dashboard && npm run dev -- --port 3000
 
-dev: etl models
+dev: pipeline
 	cd dashboard && npm run dev -- --port 3000
 
-dashboard-test:
+# --- Tests ---
+test:
+	$(PYTHON) -m pytest etl_v2/tests/ -v
 	cd dashboard && npx vitest run
 
-dashboard-e2e:
+test-etl:
+	$(PYTHON) -m pytest etl_v2/tests/ -v --cov=etl_v2
+
+test-e2e:
 	cd dashboard && npx playwright test
 
 clean:

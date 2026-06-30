@@ -54,7 +54,7 @@
     <Card.Title>{meta?.owner_name || 'Roster ' + rosterId} — Roster Detail</Card.Title>
   </Card.Header>
   <Card.Content>
-    <div class="flex gap-2.5 flex-wrap mb-4">
+    <div class="flex flex-wrap justify-between mb-4">
       <div class="bg-surface border border-line rounded-md px-3.5 py-2 text-[10px] text-ink-dim uppercase tracking-[.06em] font-semibold">Total value<b class="block font-mono font-bold text-lg leading-tight text-ink mt-0.5 normal-case tracking-normal">{fmt(meta?.team_value)}</b></div>
       <div class="bg-surface border border-line rounded-md px-3.5 py-2 text-[10px] text-ink-dim uppercase tracking-[.06em] font-semibold">League rank<b class="block font-mono font-bold text-lg leading-tight text-ink mt-0.5 normal-case tracking-normal">#{meta?.value_rank}</b></div>
       <div class="bg-surface border border-line rounded-md px-3.5 py-2 text-[10px] text-ink-dim uppercase tracking-[.06em] font-semibold">HHI<b class="block font-mono font-bold text-lg leading-tight text-ink mt-0.5 normal-case tracking-normal">{meta?.hhi ? Number(meta.hhi).toFixed(3) : '–'}</b></div>

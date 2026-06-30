@@ -3,15 +3,16 @@
   "private": true,
   "scripts": {
     "setup": "node scripts/setup.mjs",
-    "etl": "node scripts/run-python.mjs etl/etl_pipeline.py",
-    "models": "node scripts/run-python.mjs etl/points_model.py && node scripts/run-python.mjs etl/lineup_solver.py --db etl/data/dynasty.db && node scripts/run-python.mjs etl/dp_archive_etl.py --db etl/data/dynasty.db --since 2019-01-01 && node scripts/run-python.mjs etl/outcomes_etl.py --db etl/data/dynasty.db --seasons 2019 2025 --seed-fc && node scripts/run-python.mjs etl/project_production.py --db etl/data/dynasty.db && node scripts/run-python.mjs etl/cornering_metrics.py --db etl/data/dynasty.db",
+    "pipeline": "node scripts/run-python.mjs -m etl_v2.run --output db",
+    "pipeline:csv": "node scripts/run-python.mjs -m etl_v2.run --output csv",
+    "seed": "node scripts/run-python.mjs -m etl_v2.run --input csv",
     "dev": "cd dashboard && npm run dev -- --port 3000",
     "build": "cd dashboard && npm run build",
     "preview": "cd dashboard && npm run preview -- --port 3000",
     "test": "cd dashboard && npx vitest run",
+    "test:etl": "node scripts/run-python.mjs -m pytest etl_v2/tests/ -v",
     "test:e2e": "cd dashboard && npx playwright test",
     "check": "cd dashboard && npm run check",
-    "all": "npm run etl && npm run models && npm run dev",
-    "legacy": "cd server && npm install && node src/index.js"
+    "all": "npm run pipeline && npm run dev"
   }
 }
