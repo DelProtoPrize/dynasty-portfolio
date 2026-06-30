@@ -179,6 +179,50 @@ def test_projections_sets_argv():
         mock_proj.main.assert_called_once()
 
 
+# --- Backtest adapter ---
+
+def test_backtest_sets_argv():
+    mock_bt = MagicMock()
+    mock_bt.main = MagicMock(return_value=0)
+    with patch.dict("sys.modules", {
+        "etl.backtest_baselines": mock_bt,
+        "build_features": MagicMock(),
+    }):
+        if "etl_v2.steps.backtest" in sys.modules:
+            del sys.modules["etl_v2.steps.backtest"]
+        from etl_v2.steps.backtest import run_backtest
+        cfg = Config()
+        cfg.db_path = Path("/tmp/test.db")
+
+        run_backtest(cfg)
+
+        assert sys.argv == ["backtest_baselines", "--db", "/tmp/test.db"]
+        mock_bt.main.assert_called_once()
+
+
+# --- Projection model adapter ---
+
+def test_projection_model_sets_argv():
+    mock_pm = MagicMock()
+    mock_pm.main = MagicMock(return_value=0)
+    with patch.dict("sys.modules", {
+        "etl.projection_model": mock_pm,
+        "backtest_baselines": MagicMock(),
+        "build_features": MagicMock(),
+        "projection_model": MagicMock(),
+    }):
+        if "etl_v2.steps.projection_model" in sys.modules:
+            del sys.modules["etl_v2.steps.projection_model"]
+        from etl_v2.steps.projection_model import run_projection_model
+        cfg = Config()
+        cfg.db_path = Path("/tmp/test.db")
+
+        run_projection_model(cfg)
+
+        assert sys.argv == ["projection_model", "--db", "/tmp/test.db"]
+        mock_pm.main.assert_called_once()
+
+
 # --- Cornering adapter ---
 
 @patch("etl.cornering_metrics.main", return_value=0)

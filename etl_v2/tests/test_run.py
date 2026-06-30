@@ -146,6 +146,20 @@ def test_run_step_outcomes(mock_out):
     mock_out.assert_called_once_with(cfg)
 
 
+@patch("etl_v2.steps.backtest.run_backtest")
+def test_run_step_backtest(mock_bt):
+    cfg = Config()
+    run_step("backtest", cfg, dry_run=False)
+    mock_bt.assert_called_once_with(cfg)
+
+
+@patch("etl_v2.steps.projection_model.run_projection_model")
+def test_run_step_projection_model(mock_pm):
+    cfg = Config()
+    run_step("projection_model", cfg, dry_run=False)
+    mock_pm.assert_called_once_with(cfg)
+
+
 @patch("etl_v2.steps.projections.run_projections")
 def test_run_step_projections(mock_proj):
     cfg = Config()

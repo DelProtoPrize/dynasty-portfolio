@@ -25,6 +25,8 @@ STEPS = [
     "lineup_solver",
     "dp_archive",
     "outcomes",
+    "backtest",
+    "projection_model",
     "projections",
     "cornering",
 ]
@@ -89,6 +91,12 @@ def run_step(name: str, cfg: Config, dry_run: bool) -> None:
     elif name == "outcomes":
         from etl_v2.steps.outcomes import run_outcomes
         run_outcomes(cfg)
+    elif name == "backtest":
+        from etl_v2.steps.backtest import run_backtest
+        run_backtest(cfg)
+    elif name == "projection_model":
+        from etl_v2.steps.projection_model import run_projection_model
+        run_projection_model(cfg)
     elif name == "projections":
         from etl_v2.steps.projections import run_projections
         run_projections(cfg)
