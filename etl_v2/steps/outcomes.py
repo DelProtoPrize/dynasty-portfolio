@@ -16,8 +16,12 @@ def run_outcomes(cfg: Config) -> None:
     outcomes.STATS_URL = cfg.nflverse_stats_url
 
     sys.argv = [
-        "outcomes_etl", "--db", str(cfg.db_path),
-        "--seasons", str(cfg.outcomes_first_season), str(cfg.outcomes_last_season),
+        "outcomes_etl",
+        "--db",
+        str(cfg.db_path),
+        "--seasons",
+        str(cfg.outcomes_first_season),
+        str(cfg.outcomes_last_season),
         "--seed-fc",
     ]
     outcomes.main()

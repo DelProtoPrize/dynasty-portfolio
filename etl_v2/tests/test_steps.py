@@ -1,18 +1,17 @@
 import os
 import sys
-from unittest.mock import patch, MagicMock
 from pathlib import Path
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from etl_v2.config import Config
 
-
 # --- Extract adapter ---
+
 
 @patch("etl.etl_pipeline.run")
 def test_extract_sets_env_and_calls_run(mock_run):
     from etl_v2.steps.extract import run_extract
+
     cfg = Config()
     cfg.output = "db"
     cfg.sleeper_username = "testuser"
@@ -37,6 +36,7 @@ def test_extract_sets_env_and_calls_run(mock_run):
 @patch("etl.etl_pipeline.run")
 def test_extract_csv_mode_sets_export_csv(mock_run):
     from etl_v2.steps.extract import run_extract
+
     cfg = Config()
     cfg.output = "csv"
     cfg.csv_dir = Path("/tmp/csv_out")
@@ -50,8 +50,8 @@ def test_extract_csv_mode_sets_export_csv(mock_run):
 
 @patch("etl.etl_pipeline.run")
 def test_extract_patches_module_constants(mock_run):
-    from etl_v2.steps.extract import run_extract
     import etl.etl_pipeline as pipeline
+    from etl_v2.steps.extract import run_extract
 
     cfg = Config()
     cfg.sleeper_base_url = "http://test-sleeper"
@@ -71,9 +71,11 @@ def test_extract_patches_module_constants(mock_run):
 
 # --- Points model adapter ---
 
+
 @patch("etl.points_model.run")
 def test_points_model_sets_env_and_calls_run(mock_run):
     from etl_v2.steps.points_model import run_points_model
+
     cfg = Config()
     cfg.nflverse_stats_url = "http://test-nflverse/{season}"
     cfg.dp_crosswalk_url = "http://test-xwalk"
@@ -86,8 +88,8 @@ def test_points_model_sets_env_and_calls_run(mock_run):
 
 @patch("etl.points_model.run")
 def test_points_model_patches_urls(mock_run):
-    from etl_v2.steps.points_model import run_points_model
     import etl.points_model as pm
+    from etl_v2.steps.points_model import run_points_model
 
     cfg = Config()
     cfg.nflverse_stats_url = "http://custom-nflverse/{season}"
@@ -103,9 +105,11 @@ def test_points_model_patches_urls(mock_run):
 
 # --- Lineup solver adapter ---
 
+
 @patch("etl.lineup_solver.main", return_value=0)
 def test_lineup_solver_sets_argv(mock_main):
     from etl_v2.steps.lineup_solver import run_lineup_solver
+
     cfg = Config()
     cfg.db_path = Path("/tmp/test.db")
 
@@ -117,10 +121,11 @@ def test_lineup_solver_sets_argv(mock_main):
 
 # --- DP archive adapter ---
 
+
 @patch("etl.dp_archive_etl.main", return_value=0)
 def test_dp_archive_sets_argv_and_patches(mock_main):
-    from etl_v2.steps.dp_archive import run_dp_archive
     import etl.dp_archive_etl as archive
+    from etl_v2.steps.dp_archive import run_dp_archive
 
     cfg = Config()
     cfg.db_path = Path("/tmp/test.db")
@@ -138,10 +143,11 @@ def test_dp_archive_sets_argv_and_patches(mock_main):
 
 # --- Outcomes adapter ---
 
+
 @patch("etl.outcomes_etl.main", return_value=0)
 def test_outcomes_sets_argv_and_patches(mock_main):
-    from etl_v2.steps.outcomes import run_outcomes
     import etl.outcomes_etl as outcomes
+    from etl_v2.steps.outcomes import run_outcomes
 
     cfg = Config()
     cfg.db_path = Path("/tmp/test.db")
@@ -158,18 +164,23 @@ def test_outcomes_sets_argv_and_patches(mock_main):
 
 # --- Projections adapter ---
 
+
 def test_projections_sets_argv():
     mock_proj = MagicMock()
     mock_proj.main = MagicMock(return_value=0)
-    with patch.dict("sys.modules", {
-        "etl.project_production": mock_proj,
-        "backtest_baselines": MagicMock(),
-        "projection_model": MagicMock(),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "etl.project_production": mock_proj,
+            "backtest_baselines": MagicMock(),
+            "projection_model": MagicMock(),
+        },
+    ):
         # Force reimport of the adapter so it picks up the mocked module
         if "etl_v2.steps.projections" in sys.modules:
             del sys.modules["etl_v2.steps.projections"]
         from etl_v2.steps.projections import run_projections
+
         cfg = Config()
         cfg.db_path = Path("/tmp/test.db")
 
@@ -181,16 +192,21 @@ def test_projections_sets_argv():
 
 # --- Backtest adapter ---
 
+
 def test_backtest_sets_argv():
     mock_bt = MagicMock()
     mock_bt.main = MagicMock(return_value=0)
-    with patch.dict("sys.modules", {
-        "etl.backtest_baselines": mock_bt,
-        "build_features": MagicMock(),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "etl.backtest_baselines": mock_bt,
+            "build_features": MagicMock(),
+        },
+    ):
         if "etl_v2.steps.backtest" in sys.modules:
             del sys.modules["etl_v2.steps.backtest"]
         from etl_v2.steps.backtest import run_backtest
+
         cfg = Config()
         cfg.db_path = Path("/tmp/test.db")
 
@@ -202,18 +218,23 @@ def test_backtest_sets_argv():
 
 # --- Projection model adapter ---
 
+
 def test_projection_model_sets_argv():
     mock_pm = MagicMock()
     mock_pm.main = MagicMock(return_value=0)
-    with patch.dict("sys.modules", {
-        "etl.projection_model": mock_pm,
-        "backtest_baselines": MagicMock(),
-        "build_features": MagicMock(),
-        "projection_model": MagicMock(),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "etl.projection_model": mock_pm,
+            "backtest_baselines": MagicMock(),
+            "build_features": MagicMock(),
+            "projection_model": MagicMock(),
+        },
+    ):
         if "etl_v2.steps.projection_model" in sys.modules:
             del sys.modules["etl_v2.steps.projection_model"]
         from etl_v2.steps.projection_model import run_projection_model
+
         cfg = Config()
         cfg.db_path = Path("/tmp/test.db")
 
@@ -225,9 +246,11 @@ def test_projection_model_sets_argv():
 
 # --- Cornering adapter ---
 
+
 @patch("etl.cornering_metrics.main", return_value=0)
 def test_cornering_sets_argv(mock_main):
     from etl_v2.steps.cornering import run_cornering
+
     cfg = Config()
     cfg.db_path = Path("/tmp/test.db")
 

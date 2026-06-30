@@ -1,11 +1,10 @@
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import patch
 
-from etl_v2.run import build_parser, resolve_steps, run_step, main, STEPS
 from etl_v2.config import Config
-
+from etl_v2.run import STEPS, build_parser, main, resolve_steps, run_step
 
 # --- CLI parsing ---
+
 
 def test_default_runs_all_steps():
     args = build_parser().parse_args(["--output", "db"])
@@ -48,6 +47,7 @@ def test_dry_run_flag():
 
 # --- Config ---
 
+
 def test_config_defaults():
     cfg = Config()
     assert "sleeper.app" in cfg.sleeper_base_url
@@ -68,11 +68,14 @@ def test_config_database_url_from_env():
 
 
 def test_config_env_overrides():
-    with patch.dict("os.environ", {
-        "SLEEPER_BASE_URL": "http://custom-sleeper.example.com",
-        "FANTASYCALC_BASE_URL": "http://custom-fc.example.com",
-        "DP_BASE_URL": "http://custom-dp.example.com",
-    }):
+    with patch.dict(
+        "os.environ",
+        {
+            "SLEEPER_BASE_URL": "http://custom-sleeper.example.com",
+            "FANTASYCALC_BASE_URL": "http://custom-fc.example.com",
+            "DP_BASE_URL": "http://custom-dp.example.com",
+        },
+    ):
         cfg = Config()
         assert cfg.sleeper_base_url == "http://custom-sleeper.example.com"
         assert cfg.fantasycalc_base_url == "http://custom-fc.example.com"
@@ -80,11 +83,14 @@ def test_config_env_overrides():
 
 
 def test_config_path_overrides():
-    with patch.dict("os.environ", {
-        "DATA_DIR": "/tmp/test_data",
-        "DB_PATH": "/tmp/test.db",
-        "CSV_OUTPUT_DIR": "/tmp/test_csv",
-    }):
+    with patch.dict(
+        "os.environ",
+        {
+            "DATA_DIR": "/tmp/test_data",
+            "DB_PATH": "/tmp/test.db",
+            "CSV_OUTPUT_DIR": "/tmp/test_csv",
+        },
+    ):
         cfg = Config()
         assert str(cfg.data_dir) == "/tmp/test_data"
         assert str(cfg.db_path) == "/tmp/test.db"
@@ -98,11 +104,14 @@ def test_config_boolean_parsing():
 
 
 def test_config_int_parsing():
-    with patch.dict("os.environ", {
-        "PLAYER_CACHE_TTL_HOURS": "48",
-        "OUTCOMES_FIRST_SEASON": "2020",
-        "OUTCOMES_LAST_SEASON": "2024",
-    }):
+    with patch.dict(
+        "os.environ",
+        {
+            "PLAYER_CACHE_TTL_HOURS": "48",
+            "OUTCOMES_FIRST_SEASON": "2020",
+            "OUTCOMES_LAST_SEASON": "2024",
+        },
+    ):
         cfg = Config()
         assert cfg.player_cache_ttl_hours == 48
         assert cfg.outcomes_first_season == 2020
@@ -110,6 +119,7 @@ def test_config_int_parsing():
 
 
 # --- run_step dispatches correctly ---
+
 
 @patch("etl_v2.steps.extract.run_extract")
 def test_run_step_extract(mock_extract):
@@ -175,6 +185,7 @@ def test_run_step_cornering(mock_corn):
 
 
 # --- main() orchestration ---
+
 
 @patch("etl_v2.run.run_step")
 def test_main_runs_all_steps(mock_run_step):

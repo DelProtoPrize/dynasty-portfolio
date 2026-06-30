@@ -8,6 +8,7 @@ Usage:
     python -m etl_v2.run --input csv                    # seed from CSV_OUTPUT_DIR
     python -m etl_v2.run --input csv --from /path/to/csvs  # seed from custom path
 """
+
 from __future__ import annotations
 
 import logging
@@ -83,9 +84,7 @@ def seed_from_csv(cfg: Config, csv_path: Path | None = None) -> None:
             skipped.append(table)
             continue
         df = pd.read_csv(file_map[table], dtype=str)
-        # Drop columns that are computed (like roster_key from Power BI exports)
-        extra_cols = [c for c in df.columns if c not in _get_table_columns(df, keys)]
-        df = df[[c for c in df.columns if c not in ["roster_key"]]]
+        df = df[[c for c in df.columns if c != "roster_key"]]
         log.info("Seeding %s from %s (%d rows)", table, file_map[table].name, len(df))
         upsert(engine, table, df, keys)
         loaded += 1
@@ -110,7 +109,3 @@ def seed_from_csv(cfg: Config, csv_path: Path | None = None) -> None:
     log.info("Seed complete: %d tables loaded", loaded)
     if skipped:
         log.warning("Skipped (no primary key mapping): %s", skipped)
-
-
-def _get_table_columns(df: pd.DataFrame, keys: list[str]) -> set[str]:
-    return set(df.columns)

@@ -7,23 +7,21 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from etl_v2.config import Config
-from etl_v2.seed import seed_from_csv, TABLE_KEYS, LOAD_ORDER
-from etl_v2.run import build_parser, main
+from etl_v2.run import main
+from etl_v2.seed import LOAD_ORDER, TABLE_KEYS, seed_from_csv
 
 
 def _make_db(tmp: str) -> Path:
     db_path = Path(tmp) / "test.db"
     engine = create_engine(f"sqlite:///{db_path}")
     with engine.begin() as conn:
-        conn.execute(text(
-            "CREATE TABLE dim_leagues (league_id TEXT PRIMARY KEY, league_name TEXT, season TEXT)"
-        ))
-        conn.execute(text(
-            "CREATE TABLE dim_players (player_id TEXT PRIMARY KEY, player_name TEXT, position TEXT)"
-        ))
-        conn.execute(text(
-            "CREATE TABLE dim_managers (league_id TEXT, roster_id TEXT, owner_name TEXT, PRIMARY KEY (league_id, roster_id))"
-        ))
+        conn.execute(text("CREATE TABLE dim_leagues (league_id TEXT PRIMARY KEY, league_name TEXT, season TEXT)"))
+        conn.execute(text("CREATE TABLE dim_players (player_id TEXT PRIMARY KEY, player_name TEXT, position TEXT)"))
+        conn.execute(
+            text(
+                "CREATE TABLE dim_managers (league_id TEXT, roster_id TEXT, owner_name TEXT, PRIMARY KEY (league_id, roster_id))"
+            )
+        )
     return db_path
 
 
@@ -109,9 +107,9 @@ def test_seed_drops_roster_key_column():
         csv_dir = Path(tmp) / "csvs"
         csv_dir.mkdir()
 
-        pd.DataFrame({
-            "league_id": ["lg1"], "roster_id": ["1"], "owner_name": ["Bob"], "roster_key": ["lg1-1"]
-        }).to_csv(csv_dir / "dim_managers.csv", index=False)
+        pd.DataFrame({"league_id": ["lg1"], "roster_id": ["1"], "owner_name": ["Bob"], "roster_key": ["lg1-1"]}).to_csv(
+            csv_dir / "dim_managers.csv", index=False
+        )
 
         cfg = Config()
         cfg.db_path = db_path
@@ -169,16 +167,18 @@ def test_seed_loads_tables_not_in_load_order():
         db_path = Path(tmp) / "test.db"
         engine = create_engine(f"sqlite:///{db_path}")
         with engine.begin() as conn:
-            conn.execute(text(
-                "CREATE TABLE outcomes (league_id TEXT, sleeper_id TEXT, season TEXT, week TEXT, pts TEXT, "
-                "PRIMARY KEY (league_id, sleeper_id, season, week))"
-            ))
+            conn.execute(
+                text(
+                    "CREATE TABLE outcomes (league_id TEXT, sleeper_id TEXT, season TEXT, week TEXT, pts TEXT, "
+                    "PRIMARY KEY (league_id, sleeper_id, season, week))"
+                )
+            )
 
         csv_dir = Path(tmp) / "csvs"
         csv_dir.mkdir()
-        pd.DataFrame({
-            "league_id": ["lg1"], "sleeper_id": ["s1"], "season": ["2025"], "week": ["1"], "pts": ["12.5"]
-        }).to_csv(csv_dir / "outcomes.csv", index=False)
+        pd.DataFrame(
+            {"league_id": ["lg1"], "sleeper_id": ["s1"], "season": ["2025"], "week": ["1"], "pts": ["12.5"]}
+        ).to_csv(csv_dir / "outcomes.csv", index=False)
 
         cfg = Config()
         cfg.db_path = db_path

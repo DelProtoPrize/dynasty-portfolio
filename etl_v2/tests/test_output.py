@@ -1,16 +1,14 @@
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pandas as pd
-import pytest
 
 from etl_v2.config import Config
 from etl_v2.output.csv import write_csv
 from etl_v2.output.db import get_engine, upsert
 
-
 # --- CSV output ---
+
 
 def test_write_csv_creates_file():
     with tempfile.TemporaryDirectory() as tmp:
@@ -61,6 +59,7 @@ def test_write_csv_empty_dataframe():
 
 # --- DB output ---
 
+
 def test_get_engine_uses_config():
     with tempfile.TemporaryDirectory() as tmp:
         cfg = Config()
@@ -72,6 +71,7 @@ def test_get_engine_uses_config():
 def test_upsert_inserts_data():
     with tempfile.TemporaryDirectory() as tmp:
         from sqlalchemy import create_engine, text
+
         db_path = Path(tmp) / "test.db"
         engine = create_engine(f"sqlite:///{db_path}")
         with engine.begin() as conn:
@@ -88,6 +88,7 @@ def test_upsert_inserts_data():
 def test_upsert_updates_on_conflict():
     with tempfile.TemporaryDirectory() as tmp:
         from sqlalchemy import create_engine, text
+
         db_path = Path(tmp) / "test.db"
         engine = create_engine(f"sqlite:///{db_path}")
         with engine.begin() as conn:
@@ -105,6 +106,7 @@ def test_upsert_updates_on_conflict():
 def test_upsert_skips_empty_dataframe():
     with tempfile.TemporaryDirectory() as tmp:
         from sqlalchemy import create_engine, text
+
         db_path = Path(tmp) / "test.db"
         engine = create_engine(f"sqlite:///{db_path}")
         with engine.begin() as conn:
@@ -121,6 +123,7 @@ def test_upsert_skips_empty_dataframe():
 def test_upsert_handles_null_values():
     with tempfile.TemporaryDirectory() as tmp:
         from sqlalchemy import create_engine, text
+
         db_path = Path(tmp) / "test.db"
         engine = create_engine(f"sqlite:///{db_path}")
         with engine.begin() as conn:

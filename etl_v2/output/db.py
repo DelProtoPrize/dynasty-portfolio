@@ -23,8 +23,10 @@ def upsert(engine: Engine, table: str, df: pd.DataFrame, conflict_cols: list[str
         updates = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in cols if c not in conflict_cols)
         conflict = ", ".join(f'"{c}"' for c in conflict_cols)
         action = f"DO UPDATE SET {updates}" if updates else "DO NOTHING"
-        conn.execute(text(
-            f'INSERT INTO {table} ({collist}) SELECT {collist} FROM {staging} '
-            f'WHERE true ON CONFLICT ({conflict}) {action}'
-        ))
+        conn.execute(
+            text(
+                f"INSERT INTO {table} ({collist}) SELECT {collist} FROM {staging} "
+                f"WHERE true ON CONFLICT ({conflict}) {action}"
+            )
+        )
         conn.execute(text(f"DROP TABLE IF EXISTS {staging}"))
