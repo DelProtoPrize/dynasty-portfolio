@@ -12,7 +12,7 @@ vi.mock('$lib/server/db', () => ({
 describe('GET /api/leagues', () => {
   it('returns array of league objects with expected shape', async () => {
     const { GET } = await import('../../routes/api/leagues/+server');
-    const response = await GET({} as any);
+    const response = await (GET as any)();
     const data = await response.json();
 
     expect(Array.isArray(data)).toBe(true);

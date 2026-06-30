@@ -116,7 +116,7 @@ export const GET: RequestHandler = async () => {
       const beta = order.map(feat =>
         POS_ORDER.map(pos => {
           const row = cfRows.find((r: any) => r.feature === feat && r.position === pos);
-          return row ? Math.round(row.beta * 1000) / 1000 : null;
+          return row ? Math.round((row as any).beta * 1000) / 1000 : null;
         })
       );
       coefficients = { features: order, positions: POS_ORDER, beta };
