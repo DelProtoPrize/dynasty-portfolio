@@ -5,14 +5,19 @@ export const load: PageServerLoad = async ({ url, parent }) => {
   const { leagues } = await parent();
   const leagueId = url.searchParams.get('league') || (leagues[0] as any)?.league_id;
 
+  const isPortfolio = leagueId === '__portfolio__';
   if (!leagueId) return { leagueId: null, diagnostics: [], production: [] };
+  if (isPortfolio) {
+    // Return minimal for portfolio mode (data is loaded client-side)
+    return { leagueId, diagnostics: [], production: [], projected: [], construction: [] };
+  }
 
-  const [diagnostics, production, projected] = await Promise.all([
+  const [diagnostics, production, projected, construction, valueHistoryRaw, rosterDeltasRaw] = await Promise.all([
     query(`
       WITH rp AS (
         SELECT league_id, roster_id, fp_market_value AS v
-        FROM v_player_market
-        WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM v_player_market)
+        FROM v_roster_assets
+        WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM v_roster_assets)
           AND league_id = ?
           AND fp_market_value IS NOT NULL
       ),
@@ -60,8 +65,59 @@ export const load: PageServerLoad = async ({ url, parent }) => {
         )
       GROUP BY p.roster_id
       ORDER BY p.roster_id
-    `, [leagueId, leagueId]).catch(() => [])
+    `, [leagueId, leagueId]).catch(() => []),
+    query(`
+      SELECT c.roster_id, c.osl_points, c.surplus_count, c.surplus_vorp, c.surplus_points,
+             c.slots_filled, c.skipped_slots
+      FROM roster_construction c
+      WHERE c.league_id = ?
+        AND c.snapshot_date = (
+          SELECT MAX(snapshot_date) FROM roster_construction WHERE league_id = ?
+        )
+      ORDER BY c.osl_points DESC
+    `, [leagueId, leagueId]).catch(() => []),
+    // valueHistory: league total value over recent snapshots for sparklines/deltas
+    query(`
+      WITH recent AS (
+        SELECT snapshot_date FROM v_player_market 
+        WHERE league_id = ? GROUP BY snapshot_date 
+        ORDER BY snapshot_date DESC LIMIT 6
+      )
+      SELECT snapshot_date, SUM(fp_market_value) as total_value
+      FROM v_player_market
+      WHERE league_id = ? AND snapshot_date IN (SELECT snapshot_date FROM recent)
+      GROUP BY snapshot_date ORDER BY snapshot_date
+    `, [leagueId, leagueId]).catch(() => []),
+    // per-roster value deltas vs previous snapshot
+    query(`
+      WITH dates AS (
+        SELECT snapshot_date FROM v_player_market 
+        WHERE league_id = ? GROUP BY snapshot_date 
+        ORDER BY snapshot_date DESC LIMIT 2
+      ),
+      prev AS (
+        SELECT roster_id, SUM(fp_market_value) AS prev_team_value
+        FROM v_player_market WHERE league_id = ? 
+          AND snapshot_date = (SELECT MIN(snapshot_date) FROM dates) GROUP BY roster_id
+      ),
+      curr AS (
+        SELECT roster_id, SUM(fp_market_value) AS curr_team_value
+        FROM v_player_market WHERE league_id = ? 
+          AND snapshot_date = (SELECT MAX(snapshot_date) FROM dates) GROUP BY roster_id
+      )
+      SELECT c.roster_id, c.curr_team_value, p.prev_team_value,
+        CASE WHEN p.prev_team_value > 0 THEN (c.curr_team_value - p.prev_team_value)*100.0 / p.prev_team_value ELSE NULL END AS value_delta_pct
+      FROM curr c LEFT JOIN prev p ON p.roster_id = c.roster_id
+    `, [leagueId, leagueId, leagueId]).catch(() => [])
   ]);
 
-  return { leagueId, diagnostics, production, projected };
+  return { 
+    leagueId, 
+    diagnostics, 
+    production, 
+    projected, 
+    construction, 
+    valueHistory: valueHistoryRaw || [], 
+    rosterDeltas: rosterDeltasRaw || [] 
+  };
 };
