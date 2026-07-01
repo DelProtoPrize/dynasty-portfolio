@@ -1,0 +1,18 @@
+{
+  "name": "dynasty-portfolio",
+  "private": true,
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "pipeline": "node scripts/run-python.mjs -m etl_v2.run --output db",
+    "pipeline:csv": "node scripts/run-python.mjs -m etl_v2.run --output csv",
+    "seed": "node scripts/run-python.mjs -m etl_v2.run --input csv",
+    "dev": "cd dashboard && npm run dev -- --port 3000",
+    "build": "cd dashboard && npm run build",
+    "preview": "cd dashboard && npm run preview -- --port 3000",
+    "test": "cd dashboard && npx vitest run",
+    "test:etl": "node scripts/run-python.mjs -m pytest etl_v2/tests/ -v",
+    "test:e2e": "cd dashboard && npx playwright test",
+    "check": "cd dashboard && npm run check",
+    "all": "npm run pipeline && npm run dev"
+  }
+}

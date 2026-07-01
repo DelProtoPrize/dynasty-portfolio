@@ -25,3 +25,13 @@ npm-debug.log*
 # os/editor
 .DS_Store
 .vscode/
+
+# caches
+.cache/
+.playwright-mcp/
+
+# dashboard
+dashboard/.svelte-kit/
+dashboard/build/
+dashboard/node_modules/
+dashboard/.env

@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dynasty
+      POSTGRES_PASSWORD: dynasty
+      POSTGRES_DB: dynasty
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dynasty"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  etl:
+    build:
+      context: .
+      dockerfile: etl_v2/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://dynasty:dynasty@postgres:5432/dynasty
+      SLEEPER_USERNAME: ${SLEEPER_USERNAME}
+      SLEEPER_USER_ID: ${SLEEPER_USER_ID:-}
+      SLEEPER_SEASON: ${SLEEPER_SEASON:-2026}
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.etl.schedule: ${ETL_SCHEDULE:-0 0 6 * * *}
+      ofelia.job-exec.etl.command: "python -m etl_v2.run --output db"
+
+  scheduler:
+    image: mcuadros/ofelia:latest
+    depends_on:
+      - etl
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: daemon --docker
+
+  dashboard:
+    build:
+      context: dashboard
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://dynasty:dynasty@postgres:5432/dynasty
+
+volumes:
+  pgdata:
