@@ -28,7 +28,101 @@ let projByRoster = null;   // projected basis (m1); null until project_productio
 let projTotal = 0;
 let cornerCache = { realized: null, projected: null };  // per-league fetch cache
 let cornerBasis = 'realized';
+let arbRows = null;          // /arbitrage cache for the current league
+let constrRows = null;       // /construction cache for the current league
+let allLeagues = [];         // /leagues response (for the Portfolio view)
+const PORTFOLIO = '__portfolio__';
 let valueTotal = 0;
+
+/* ── Table enhancement: client-side sort / filter / CSV export ─────────────
+   Vanilla implementation of the shadcn table patterns — adopting shadcn or
+   bits-ui literally would mean a React/Svelte migration, which is a product
+   phase, not a table feature. Sorting reorders <tr> nodes in place, so
+   delegated click handlers (roster drill-in) survive untouched. */
+function enhanceTable(container, { csvName = 'export', filter = true } = {}) {
+  if (!container) return;
+  const table = container.querySelector('table');
+  if (!table || table.dataset.enhanced) return;
+  table.dataset.enhanced = '1';
+  const tbody = table.querySelector('tbody');
+  const headers = [...table.querySelectorAll('thead th')];
+
+  const bar = document.createElement('div');
+  bar.className = 'tbl-toolbar';
+  if (filter) {
+    const inp = document.createElement('input');
+    inp.type = 'search';
+    inp.placeholder = 'Filter rows…';
+    inp.setAttribute('aria-label', 'Filter table rows');
+    const count = document.createElement('span');
+    count.className = 'tbl-count';
+    inp.addEventListener('input', () => {
+      const q = inp.value.trim().toLowerCase();
+      let shown = 0;
+      for (const tr of tbody.querySelectorAll('tr:not(.surplus-row)')) {
+        const hit = !q || tr.textContent.toLowerCase().includes(q);
+        tr.style.display = hit ? '' : 'none';
+        // keep an expanded surplus subrow glued to its parent's visibility
+        const next = tr.nextElementSibling;
+        if (next && next.classList.contains('surplus-row')) next.style.display = hit ? '' : 'none';
+        if (hit) shown++;
+      }
+      count.textContent = q ? `${shown} shown` : '';
+    });
+    bar.append(inp, count);
+  }
+  const exp = document.createElement('button');
+  exp.type = 'button';
+  exp.textContent = 'Export CSV';
+  exp.addEventListener('click', () => {
+    const esc = (v) => `"${String(v).replaceAll('"', '""')}"`;
+    const rows = [headers.map((h) => esc(h.textContent.trim()))];
+    for (const tr of tbody.querySelectorAll('tr:not(.surplus-row)')) {
+      if (tr.style.display === 'none') continue;
+      rows.push([...tr.children].map((td) => esc(td.textContent.trim())));
+    }
+    const blob = new Blob([rows.map((r) => r.join(',')).join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${csvName}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  bar.append(exp);
+  container.insertBefore(bar, table);
+
+  const num = (t) => {
+    const n = parseFloat(t.replace(/[%,]/g, '').replace('–', ''));
+    return Number.isFinite(n) ? n : null;
+  };
+  headers.forEach((th, i) => {
+    th.classList.add('sortable');
+    th.addEventListener('click', () => {
+      const dir = th.classList.contains('asc') ? 'desc' : 'asc';
+      headers.forEach((h) => h.classList.remove('asc', 'desc'));
+      th.classList.add(dir);
+      // detach surplus subrows; they re-glue to their parents after the sort
+      const glue = new Map();
+      for (const sr of tbody.querySelectorAll('tr.surplus-row')) {
+        glue.set(sr.previousElementSibling, sr);
+        sr.remove();
+      }
+      const trs = [...tbody.querySelectorAll('tr')];
+      trs.sort((a, b) => {
+        const ta = a.children[i]?.textContent.trim() ?? '';
+        const tb = b.children[i]?.textContent.trim() ?? '';
+        const na = num(ta), nb = num(tb);
+        const cmp = (na != null && nb != null) ? na - nb : ta.localeCompare(tb);
+        return dir === 'asc' ? cmp : -cmp;
+      });
+      trs.forEach((tr) => {
+        tbody.appendChild(tr);
+        const sr = glue.get(tr);
+        if (sr) tbody.appendChild(sr);
+      });
+    });
+  });
+}
 
 /* ── KPI strip (null-safe: absent on old index.html) ───────────────────── */
 function setKpi(id, value, sub, tone) {
@@ -152,18 +246,215 @@ function wireTape(rows) {
   wrap.classList.remove('unwired');
 }
 
+/* ── Insight rail: 2–4 auto-generated executive cards ───────────────────────
+   Every card is RULES-DERIVED from data already fetched this render — the
+   thresholds are visible below, the sources are the panels themselves, and a
+   card whose source endpoint is absent is omitted. Zero cards = hidden rail.
+   Click scrolls to the source panel. This is the cornering-diag narrative
+   pattern promoted to the top of the page. */
+function buildInsights() {
+  const rail = document.getElementById('insightRail');
+  if (!rail) return;
+  const cards = [];
+  const nTeams = currentRows.length || 14;
+
+  // 1) Cornering (SIGNAL): most-cornered position, if meaningfully above even share
+  const cr = cornerCache.realized;
+  if (cr && cr.league?.length) {
+    const top = [...cr.league].sort((a, b) => (b.hhi ?? 0) - (a.hhi ?? 0))[0];
+    if (top.top_share > 1.5 / nTeams) {
+      let extra = '';
+      if (cornerCache.projected) {
+        const mine = cornerCache.projected.rosters.find(
+          (x) => x.position === top.position && x.roster_id === top.top_roster_id);
+        if (mine?.vona_share != null) {
+          extra = mine.vona_share >= top.top_share - 0.01
+            ? ' — corner holds on projection' : ' — moat depreciating on projection';
+        }
+      }
+      cards.push({ pri: 1, cls: 'i-signal', tag: 'Signal · Cornering', target: 'cornerPanel',
+        head: `${ownerName(top.top_roster_id)} corners ${(top.top_share * 100).toFixed(1)}% of ${top.position} VONA${extra}`,
+        why: `Highest positional concentration in the league (HHI ${top.hhi?.toFixed(3)}). Cornered production = pricing power in trades at ${top.position}.` });
+    }
+  }
+
+  // 2) Arbitrage (OPPORTUNITY): count of large FP↔FC pricing disagreements
+  if (arbRows?.length) {
+    const TH = 1500;
+    const big = arbRows.filter((d) => Math.abs(d.arb_delta_fp_minus_fc) >= TH);
+    if (big.length) {
+      const buys = big.filter((d) => d.arb_delta_fp_minus_fc < 0).length;
+      const lead = big[0];
+      cards.push({ pri: 2, cls: 'i-opp', tag: 'Opportunity · Arbitrage', target: 'arbPanel',
+        head: `${big.length} pricing disagreement${big.length === 1 ? '' : 's'} ≥ ${fmt(TH)} (${buys} BUY-side) — top: ${lead.player_name} (${lead.arb_delta_fp_minus_fc > 0 ? '+' : ''}${fmt(Math.round(lead.arb_delta_fp_minus_fc))})`,
+        why: 'FP−FC gaps mark where consensus and settings-aware pricing diverge. Signal, not advice; TE deltas are non-TEP and less reliable.' });
+    }
+  }
+
+  // 3) Construction (CAPITAL): the trade-capital war chest
+  if (constrRows?.length) {
+    const war = [...constrRows].sort((a, b) => (b.surplus_vorp || 0) - (a.surplus_vorp || 0))[0];
+    if (war?.surplus_vorp > 0) {
+      cards.push({ pri: 3, cls: 'i-capital', tag: 'Capital · Construction', target: 'constructionPanel',
+        head: `${ownerName(war.roster_id)} benches ${war.surplus_count} startable player${war.surplus_count === 1 ? '' : 's'} (${war.surplus_vorp.toFixed(2)} VORP/wk) — deepest trade capital`,
+        why: 'Startable surplus = above-replacement players the optimal lineup cannot fit. They score nothing on the bench; they are trade assets.' });
+    }
+  }
+
+  // 4) Win-now tilt (RISK/SIGNAL): the biggest production-vs-value gap
+  if (prodByRoster && prodTotal > 0 && valueTotal > 0) {
+    let best = null;
+    for (const r of currentRows) {
+      const g = (prodByRoster[r.roster_id] || 0) / prodTotal - (r.team_value || 0) / valueTotal;
+      if (!best || Math.abs(g) > Math.abs(best.g)) best = { r, g };
+    }
+    if (best && Math.abs(best.g) > 0.02) {
+      const winNow = best.g > 0;
+      cards.push({ pri: 4, cls: winNow ? 'i-signal' : 'i-risk', tag: 'Signal · Win-Now vs Value', target: 'diagTable',
+        head: `${ownerName(best.r.roster_id)}: ${winNow ? '+' : ''}${(best.g * 100).toFixed(1)}pp production vs value — ${winNow ? 'strongest win-now tilt' : 'most value ahead of production'}`,
+        why: winNow
+          ? 'Produces more than its market share of value — contending now; watch aging risk on the roster table.'
+          : 'Market value runs ahead of current production — youth, injury, or SF-QB scarcity; the roster table says which.' });
+    }
+  }
+
+  // 5) Concentration risk (RISK): only when someone is genuinely top-heavy
+  const hot = currentRows.filter((r) => Number(r.hhi) > 0.2)
+    .sort((a, b) => b.hhi - a.hhi)[0];
+  if (hot) {
+    cards.push({ pri: 5, cls: 'i-risk', tag: 'Risk · Concentration', target: 'valueChart',
+      head: `${ownerName(hot.roster_id)} runs HHI ${Number(hot.hhi).toFixed(3)} — most fragile portfolio in the league`,
+      why: 'High HHI = value stacked in few assets. One injury moves a big share of team value; diversification is cheap insurance.' });
+  }
+
+  const pick = cards.sort((a, b) => a.pri - b.pri).slice(0, 4);
+  if (!pick.length) { rail.style.display = 'none'; rail.innerHTML = ''; return; }
+  rail.innerHTML = pick.map((c) => `
+    <div class="insight-card ${c.cls}" role="button" tabindex="0" data-target="${c.target}">
+      <div class="ic-tag">${c.tag}</div>
+      <div class="ic-head">${c.head}</div>
+      <div class="ic-why">${c.why}</div>
+    </div>`).join('');
+  rail.style.display = '';
+  if (!rail.dataset.wired) {
+    rail.dataset.wired = '1';
+    const go = (e) => {
+      const card = e.target.closest('.insight-card');
+      if (card) document.getElementById(card.dataset.target)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    rail.addEventListener('click', go);
+    rail.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') go(e); });
+  }
+}
+
+/* ── Portfolio Overview: cross-league aggregation ────────────────────────────
+   One current row per league NAME (latest season). Values stay within-league
+   currencies — shares and ranks are comparable across leagues, raw value sums
+   are NOT (different scoring/rosters), so no fabricated grand total is shown. */
+function leaguePanelIds() {
+  return ['insightRail', 'valueChart', 'diagTable', 'triPanel', 'arbPanel',
+          'cornerPanel', 'constructionPanel', 'rosterPanel'];
+}
+async function renderPortfolio() {
+  currentLeague = PORTFOLIO;
+  for (const id of leaguePanelIds()) {
+    const el = document.getElementById(id);
+    if (el) el.closest('section.panel') ? (el.closest('section.panel').style.display = 'none') : (el.style.display = 'none');
+  }
+  const panel = document.getElementById('portfolioPanel');
+  if (!panel) return;
+  panel.style.display = '';
+
+  // latest season per league name
+  const latest = new Map();
+  for (const l of allLeagues) {
+    const cur = latest.get(l.league_name);
+    if (!cur || Number(l.season) > Number(cur.season)) latest.set(l.league_name, l);
+  }
+  const leagues = [...latest.values()];
+  const per = await Promise.all(leagues.map(async (l) => {
+    let diag = [];
+    try { diag = await api(`/leagues/${l.league_id}/diagnostics`); } catch { /* absent */ }
+    const total = diag.reduce((s, d) => s + (d.team_value || 0), 0);
+    const med = median(diag.map((d) => Number(d.hhi)));
+    const top = diag.find((d) => d.value_rank === 1);
+    return { l, diag, total, med, top };
+  }));
+
+  const sum = document.getElementById('portfolioSummary');
+  if (sum) sum.innerHTML = `
+    <div class="stat">Leagues<b>${per.length}</b></div>
+    <div class="stat">Teams tracked<b>${per.reduce((s, p) => s + p.diag.length, 0)}</b></div>
+    <div class="stat" title="Median across leagues of each league's median HHI">Typical concentration<b>${(median(per.map((p) => p.med).filter((x) => x != null)) ?? 0).toFixed(3)}</b></div>`;
+
+  const tbl = document.getElementById('portfolioTable');
+  if (tbl) {
+    tbl.innerHTML = `
+      <table><thead><tr>
+        <th>League</th><th>Season</th><th>Format</th><th class="num">Teams</th>
+        <th class="num">Market cap</th><th class="num">Median HHI</th><th>Value leader</th>
+      </tr></thead><tbody>
+        ${per.map(({ l, diag, total, med, top }) => `<tr class="clickable" data-league="${l.league_id}">
+          <td>${l.league_name}</td>
+          <td class="num">${l.season}</td>
+          <td>${l.is_superflex ? 'SF' : '1QB'}${l.te_premium_value ? ' · TEP' : ''}</td>
+          <td class="num">${diag.length}</td>
+          <td class="num" title="Within-league currency — not comparable across leagues">${fmt(Math.round(total))}</td>
+          <td class="num">${med != null ? med.toFixed(3) : '–'}</td>
+          <td>${top ? (top.owner_name || 'Roster ' + top.roster_id) : '–'}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+    tbl.querySelector('tbody').addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-league]');
+      if (tr) { leagueSel.value = tr.dataset.league; leagueSel.dispatchEvent(new Event('change')); }
+    });
+    enhanceTable(tbl, { csvName: 'portfolio_overview' });
+  }
+
+  // concentration comparison: each league's team-HHI spread as a dot strip
+  const traces = per.filter((p) => p.diag.length).map((p) => ({
+    type: 'scatter', mode: 'markers', name: p.l.league_name,
+    x: p.diag.map((d) => Number(d.hhi)),
+    y: p.diag.map(() => p.l.league_name),
+    text: p.diag.map((d) => d.owner_name || 'Roster ' + d.roster_id),
+    marker: { size: 8, opacity: 0.75 },
+    hovertemplate: '%{text}: HHI %{x:.3f}<extra>' + p.l.league_name + '</extra>',
+  }));
+  if (traces.length) Plotly.react('portfolioChart', traces, {
+    margin: { l: 150, r: 20, t: 10, b: 40 }, showlegend: false,
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent', font: { color: INK },
+    xaxis: { title: 'Team HHI (concentration) — one dot per team', gridcolor: GRID },
+    yaxis: { gridcolor: GRID },
+  }, { displayModeBar: false, responsive: true });
+}
+
+function showLeaguePanels() {
+  const pf = document.getElementById('portfolioPanel');
+  if (pf) pf.style.display = 'none';
+  for (const id of ['valueChart', 'diagTable', 'arbPanel', 'cornerPanel', 'constructionPanel']) {
+    const el = document.getElementById(id);
+    const sec = el?.closest('section.panel');
+    if (sec) sec.style.display = '';
+  }
+}
+
 async function init() {
   const leagues = await api('/leagues');
+  allLeagues = leagues;
   // Show the season so repeated league names (one row per season) are distinguishable.
-  leagueSel.innerHTML = leagues
-    .map((l) => `<option value="${l.league_id}">${l.league_name} (${l.season})${l.is_superflex ? ' · SF' : ''}</option>`)
-    .join('');
-  leagueSel.addEventListener('change', () => render(leagueSel.value));
-  if (leagues.length) render(leagues[0].league_id);
+  leagueSel.innerHTML =
+    `<option value="${PORTFOLIO}">★ Portfolio Overview — all leagues</option>` +
+    leagues.map((l) => `<option value="${l.league_id}">${l.league_name} (${l.season})${l.is_superflex ? ' · SF' : ''}</option>`)
+      .join('');
+  leagueSel.addEventListener('change', () =>
+    leagueSel.value === PORTFOLIO ? renderPortfolio() : render(leagueSel.value));
+  if (leagues.length) { leagueSel.value = leagues[0].league_id; render(leagues[0].league_id); }
 }
 
 async function render(leagueId) {
   currentLeague = leagueId;
+  showLeaguePanels();
   document.getElementById('rosterPanel').style.display = 'none';
   const rows = await api(`/leagues/${leagueId}/diagnostics`);
   currentRows = rows;
@@ -219,9 +510,113 @@ async function render(leagueId) {
     const tr = e.target.closest('tr[data-roster]');
     if (tr) drillRoster(Number(tr.dataset.roster));
   });
+  enhanceTable(document.getElementById('diagTable'), { csvName: `diagnostics_${leagueId}` });
 
-  renderTriangulation(leagueId);
-  renderCornering(leagueId);
+  await Promise.all([
+    renderTriangulation(leagueId),
+    renderCornering(leagueId),
+    renderArbitrage(leagueId),
+    renderConstruction(leagueId),
+  ]);
+  buildInsights();
+}
+
+/* ── Market Intelligence: wires the /arbitrage route (top |FP−FC| gaps).
+   Δ>0 = consensus (FP) above settings-aware (FC) → SELL side; Δ<0 = FC
+   premium → BUY side. Signal, not advice — the header tooltip carries the
+   definition and the non-TEP caveat. Empty/absent route keeps the honest
+   state message. */
+async function renderArbitrage(leagueId) {
+  const el = document.getElementById('arbTable');
+  if (!el) return;
+  arbRows = null;
+  let rows;
+  try { rows = await api(`/leagues/${leagueId}/arbitrage`); } catch { return; }
+  if (!Array.isArray(rows) || !rows.length) return;
+  arbRows = rows;
+  const sig = (d) => d < 0
+    ? '<span class="signal signal-buy">BUY</span>'
+    : '<span class="signal signal-sell">SELL</span>';
+  el.innerHTML = `
+    <table><thead><tr>
+      <th>Player</th><th>Pos</th><th class="num">FP</th><th class="num">FC</th>
+      <th class="num">Δ (FP−FC)</th><th>Signal</th>
+    </tr></thead><tbody>
+      ${rows.map((d) => `<tr>
+        <td>${d.player_name}</td>
+        <td><span class="pos pos-${d.position || ''}">${d.position || '?'}</span></td>
+        <td class="num">${fmt(d.fp_market_value)}</td>
+        <td class="num">${fmt(d.fc_market_value)}</td>
+        <td class="num"><span class="${d.arb_delta_fp_minus_fc < 0 ? 'arb-pos' : 'arb-neg'}">${d.arb_delta_fp_minus_fc > 0 ? '+' : ''}${fmt(Math.round(d.arb_delta_fp_minus_fc))}</span></td>
+        <td>${sig(d.arb_delta_fp_minus_fc)}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+  enhanceTable(el, { csvName: `arbitrage_${leagueId}` });
+}
+
+/* ── Roster Construction: surfaces the Hungarian solver output that already
+   lives behind /construction + /surplus. Click a row to expand its surplus
+   detail (the trade-capital list). The basis chip shows points_basis verbatim
+   — realized ppg or the m1 projection, whatever the latest solver run used —
+   because a lineup number without its basis is how numbers start lying. */
+async function renderConstruction(leagueId) {
+  const el = document.getElementById('constructionTable');
+  if (!el) return;
+  constrRows = null;
+  const chip = document.getElementById('constructionBasis');
+  const diag = document.getElementById('constructionDiag');
+  let rows;
+  try { rows = await api(`/leagues/${leagueId}/construction`); } catch { return; }
+  if (!Array.isArray(rows) || !rows.length) return;
+  constrRows = rows;
+  if (chip) chip.textContent = rows[0].points_basis || '';
+  const maxOsl = Math.max(...rows.map((d) => d.osl_points || 0), 1);
+  el.innerHTML = `
+    <table><thead><tr>
+      <th>Team</th><th class="num">OSL pts</th><th></th>
+      <th class="num">Surplus</th><th class="num">Surplus VORP/wk</th>
+      <th class="num">Greedy gap</th><th class="num">Empty slots</th>
+    </tr></thead><tbody>
+      ${rows.map((d) => `<tr class="clickable" data-constr="${d.roster_id}">
+        <td>${ownerName(d.roster_id)}</td>
+        <td class="num">${(d.osl_points ?? 0).toFixed(1)}</td>
+        <td style="min-width:120px"><div class="value-bar"><div class="value-bar-fill"
+          style="width:${((d.osl_points || 0) / maxOsl * 100).toFixed(0)}%;background:var(--accent)"></div></div></td>
+        <td class="num">${d.surplus_count ?? 0}</td>
+        <td class="num">${(d.surplus_vorp ?? 0).toFixed(2)}</td>
+        <td class="num">${d.hungarian_gain > 0 ? '+' + d.hungarian_gain.toFixed(1) : '0'}</td>
+        <td class="num">${d.slots_empty ?? 0}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+  el.querySelector('tbody').addEventListener('click', async (e) => {
+    const tr = e.target.closest('tr[data-constr]');
+    if (!tr) return;
+    const open = tr.nextElementSibling?.classList.contains('surplus-row');
+    el.querySelectorAll('tr.surplus-row').forEach((x) => x.remove());
+    if (open) return;   // toggle closed
+    let sp;
+    try { sp = await api(`/leagues/${currentLeague}/rosters/${tr.dataset.constr}/surplus`); } catch { return; }
+    const sub = document.createElement('tr');
+    sub.className = 'surplus-row';
+    sub.innerHTML = `<td colspan="7">${
+      (Array.isArray(sp) && sp.length)
+        ? 'Surplus (startable, benched by the optimal lineup): ' + sp.map((x) =>
+            `<span class="pos pos-${x.position}">${x.position}</span> ${x.player_name} (${(x.vorp ?? 0).toFixed(2)} VORP)`).join(' · ')
+        : 'No above-replacement surplus — every startable player starts.'
+    }</td>`;
+    tr.after(sub);
+  });
+  enhanceTable(el, { csvName: `construction_${leagueId}` });
+  if (diag) {
+    const top = rows[0];
+    const war = [...rows].sort((a, b) => (b.surplus_vorp || 0) - (a.surplus_vorp || 0))[0];
+    let line = `<b>${ownerName(top.roster_id)}</b> fields the strongest optimal lineup (${top.osl_points.toFixed(1)} pts/wk)`;
+    if (war && war.surplus_vorp > 0) {
+      line += `; <b>${ownerName(war.roster_id)}</b> holds the deepest startable surplus — ${war.surplus_count} players, ${war.surplus_vorp.toFixed(2)} VORP/wk of trade capital riding the bench.`;
+    } else { line += '.'; }
+    diag.innerHTML = line;
+    diag.style.display = 'block';
+  }
 }
 
 /* ── Positional Cornering (Step 4 UI) ──────────────────────────────────────
