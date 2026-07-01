@@ -53,3 +53,76 @@ body {
 
 .arb-pos { color: var(--color-good); font-weight: 700; }
 .arb-neg { color: var(--color-bad); font-weight: 700; }
+
+/* Insight rail + table toolbar (ported/adapted for enterprise signal visibility) */
+.insight-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.insight-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 0 8px 8px 0;
+  padding: 11px 14px;
+  cursor: pointer;
+  transition: background .15s;
+  text-align: left;
+}
+.insight-card:hover { background: var(--color-panel-hover); }
+.insight-card:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.insight-card.i-signal { border-left-color: var(--color-warn); }
+.insight-card.i-opp { border-left-color: var(--color-good); }
+.insight-card.i-capital { border-left-color: var(--color-accent); }
+.insight-card.i-risk { border-left-color: var(--color-bad); }
+.insight-card .ic-tag {
+  font: 700 9px var(--font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--color-ink-dim);
+}
+.insight-card .ic-head {
+  font-size: 12.5px;
+  color: var(--color-ink);
+  margin-top: 4px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.insight-card .ic-why {
+  font-size: 10.5px;
+  color: var(--color-ink-faint);
+  margin-top: 5px;
+  line-height: 1.35;
+}
+
+.tbl-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.tbl-toolbar input {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
+  color: var(--color-ink);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  width: 200px;
+}
+.tbl-toolbar input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.tbl-toolbar button {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
+  color: var(--color-ink-dim);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: 600 11px/1 inherit;
+  cursor: pointer;
+  margin-left: auto;
+}
+.tbl-toolbar button:hover { color: var(--color-ink); background: var(--color-panel-hover); }
+.tbl-toolbar .tbl-count { font-size: 11px; color: var(--color-ink-faint); }
+
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--color-ink); }

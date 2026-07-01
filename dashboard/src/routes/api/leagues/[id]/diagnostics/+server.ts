@@ -6,8 +6,8 @@ export const GET: RequestHandler = async ({ params }) => {
   const rows = await query(`
     WITH rp AS (
       SELECT league_id, roster_id, fp_market_value AS v
-      FROM v_player_market
-      WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM v_player_market)
+      FROM v_roster_assets
+      WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM v_roster_assets)
         AND league_id = ?
         AND fp_market_value IS NOT NULL
     ),
