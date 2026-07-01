@@ -192,6 +192,47 @@
                    font-size: 14px; color: var(--ink); line-height: 1.55; }
     .corner-diag .durability { color: var(--ink-dim); font-size: 12.5px; display: block; margin-top: 4px; }
 
+    /* ── INSIGHT RAIL ── */
+    .insight-rail { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                    gap: 12px; margin-bottom: 20px; }
+    .insight-card { background: var(--surface); border: 1px solid var(--line);
+                    border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+                    padding: 11px 14px; cursor: pointer; transition: background .15s; }
+    .insight-card:hover { background: var(--panel-hover); }
+    .insight-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .insight-card.i-signal { border-left-color: var(--warn); }
+    .insight-card.i-opp { border-left-color: var(--good); }
+    .insight-card.i-capital { border-left-color: var(--accent); }
+    .insight-card.i-risk { border-left-color: var(--bad); }
+    .insight-card .ic-tag { font: 700 9px var(--mono); letter-spacing: .08em;
+                            text-transform: uppercase; color: var(--ink-dim); }
+    .insight-card .ic-head { font-size: 12.5px; color: var(--ink); margin-top: 4px; line-height: 1.45; }
+    .insight-card .ic-why { font-size: 10.5px; color: var(--ink-faint); margin-top: 5px; line-height: 1.4; }
+
+    /* ── TABLE TOOLBAR (vanilla sort/filter/export — shadcn-pattern, no framework) ── */
+    .tbl-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .tbl-toolbar input { background: var(--surface); border: 1px solid var(--line-strong);
+                         color: var(--ink); border-radius: 6px; padding: 5px 10px;
+                         font-size: 12px; width: 200px; }
+    .tbl-toolbar input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .tbl-toolbar button { background: var(--surface); border: 1px solid var(--line-strong);
+                          color: var(--ink-dim); border-radius: 6px; padding: 5px 10px;
+                          font: 600 11px/1 inherit; cursor: pointer; margin-left: auto; }
+    .tbl-toolbar button:hover { color: var(--ink); background: var(--panel-hover); }
+    .tbl-toolbar .tbl-count { font-size: 11px; color: var(--ink-faint); }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: var(--ink); }
+    th.sortable::after { content: ' ↕'; opacity: .35; font-size: 9px; }
+    th.sortable.asc::after { content: ' ↑'; opacity: 1; }
+    th.sortable.desc::after { content: ' ↓'; opacity: 1; }
+
+    /* ── CONSTRUCTION PANEL ── */
+    .constr-diag { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+                   font-size: 13.5px; color: var(--ink); line-height: 1.55; }
+    .basis-chip { font: 600 10px var(--mono); color: var(--ink-dim); background: var(--surface);
+                  border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px; }
+    tr.surplus-row td { background: var(--surface); font-size: 12px; }
+
     .state-msg { padding: 40px 20px; text-align: center; color: var(--ink-dim); font-size: 13px; }
     .state-msg code { font-family: var(--mono); color: var(--ink); background: var(--surface);
                       padding: 2px 6px; border-radius: 4px; font-size: 12px; }
@@ -256,10 +297,16 @@
       </div>
     </div>
 
+    <!-- INSIGHT RAIL — auto-generated from real endpoint data only. Cards are
+         rules-derived (thresholds in app.js buildInsights); when a source
+         endpoint is absent its card is OMITTED, never invented. Zero insights
+         = rail hidden. Click a card to jump to its source panel. -->
+    <div class="insight-rail" id="insightRail" style="display:none"></div>
+
     <!-- LOAD-BEARING PANELS — same ids as the live dashboard; app.js fills them. -->
     <section class="panel">
       <div class="panel-head">
-        <h2>Team Valuation &amp; Concentration</h2>
+        <h2>Team Valuation &amp; Concentration <span class="panel-sub" data-tip="Bar length = total market value; color = HHI (how much of that value sits in a few assets). Long + red = strong but fragile.">— total market value per team, colored by concentration ⓘ</span></h2>
       </div>
       <div class="chart-wrap" id="valueChart" style="height:420px"></div>
     </section>
@@ -268,7 +315,7 @@
 
     <section class="panel">
       <div class="panel-head">
-        <h2>Diagnostics <span class="panel-sub">— click a team to drill in</span></h2>
+        <h2>Diagnostics <span class="panel-sub" data-tip="Value = sum of asset market values. HHI near 1/n_assets = evenly spread; higher = top-heavy. Percentile is within-league.">— click a team to drill in ⓘ</span></h2>
       </div>
       <div id="diagTable"></div>
     </section>
@@ -280,14 +327,14 @@
            Lights up when an arbitrage endpoint exists. -->
       <section class="panel" id="arbPanel">
         <div class="panel-head">
-          <h2>Market Intelligence <span class="panel-sub">— FP vs FC arbitrage signals</span></h2>
+          <h2>Market Intelligence <span class="panel-sub" data-tip="Δ = FP − FC. FC is settings-aware (your league's format); FP is consensus. BUY = FC prices him above consensus; SELL = below. Non-TEP: deltas at TE are less reliable.">— where consensus (FP) and settings-aware (FC) pricing disagree ⓘ</span></h2>
         </div>
         <div class="state-msg" id="arbTable">
           Awaiting arbitrage feed — wire from app.js or a
           <code>/api/league/:id/arbitrage</code> endpoint.<br>
           <span style="font-size:11px;color:var(--ink-faint)">Values are non-TEP
           (FP/FC are not TEP-segmented; deltas at TE are flagged unreliable per methodology).</span>
-        </div>d
+        </div>
       </section>
 
       <section class="panel" id="triPanel" style="display:none">
@@ -324,6 +371,29 @@
     </section>
 
     <div class="section-gap"></div>
+
+    <section class="panel" id="constructionPanel">
+      <div class="panel-head">
+        <h2>Roster Construction <span class="panel-sub" data-tip="OSL = points from the mathematically optimal lineup (Hungarian assignment — greedy slot-filling is provably suboptimal with flex overlaps). Surplus = startable players (VORP>0) who don't crack it: real trade capital.">— optimal lineup strength vs surplus trade capital ⓘ</span></h2>
+        <span class="basis-chip" id="constructionBasis"></span>
+      </div>
+      <div id="constructionTable">
+        <div class="state-msg">Lineup solver output not built yet — run
+          <code>python lineup_solver.py --db data/dynasty.db</code></div>
+      </div>
+      <div class="constr-diag" id="constructionDiag" style="display:none"></div>
+    </section>
+
+    <div class="section-gap"></div>
+
+    <section class="panel" id="portfolioPanel" style="display:none">
+      <div class="panel-head">
+        <h2>Portfolio Overview <span class="panel-sub" data-tip="Cross-league aggregation: every current league, one table. Values are within-league currencies — comparable as shares and ranks, not as raw sums across leagues with different scoring.">— all leagues at a glance ⓘ</span></h2>
+      </div>
+      <div class="summary" id="portfolioSummary"></div>
+      <div id="portfolioChart" style="height:300px"></div>
+      <div id="portfolioTable"></div>
+    </section>
 
     <section class="panel" id="rosterPanel" style="display:none">
       <div class="panel-head">
