@@ -1,332 +1,184 @@
-<script lang="ts">
-  import KpiCard from '$lib/components/KpiCard.svelte';
-  import TickerTape from '$lib/components/TickerTape.svelte';
-  import TeamValuationChart from '$lib/components/TeamValuationChart.svelte';
-  import DiagnosticsTable from '$lib/components/DiagnosticsTable.svelte';
-  import ArbitragePanel from '$lib/components/ArbitragePanel.svelte';
-  import TriangulationChart from '$lib/components/TriangulationChart.svelte';
-  import CorneringPanel from '$lib/components/CorneringPanel.svelte';
-  import RosterDetail from '$lib/components/RosterDetail.svelte';
-  import InsightRail from '$lib/components/InsightRail.svelte';
-  import ConstructionPanel from '$lib/components/ConstructionPanel.svelte';
-  import * as Card from '$lib/components/ui/card';
-  import * as Table from '$lib/components/ui/table';
-  import { goto } from '$app/navigation';
-  import { fmt, pctShare, median, hhiTone } from '$lib/constants';
+import { query } from '$lib/server/db';
+import type { PageServerLoad } from './$types';
 
-  let { data } = $props();
-  let rosterDetail: any = $state(null);
+export const load: PageServerLoad = async ({ url, parent }) => {
+  const { leagues } = await parent();
+  const leagueId = url.searchParams.get('league') || (leagues[0] as any)?.league_id;
 
-  const PORTFOLIO = '__portfolio__';
-  let currentLeague = $derived(data.leagueId);
-  let isPortfolio = $derived(currentLeague === PORTFOLIO);
-
-  let diagnostics: any[] = $derived(data.diagnostics as any[]);
-  let production: any[] = $derived(data.production as any[]);
-  let projected: any[] = $derived((data as any).projected as any[] || []);
-  let construction: any[] = $derived((data as any).construction as any[] || []);
-  let valueHistory: any[] = $derived((data as any).valueHistory as any[] || []);
-  let rosterDeltas: any[] = $derived((data as any).rosterDeltas as any[] || []);
-
-  let valueTotal = $derived(diagnostics.reduce((s: number, d: any) => s + (d.team_value || 0), 0));
-  let prodTotal = $derived(production.reduce((s: number, d: any) => s + (d.production_vbd || 0), 0));
-  let prodByRoster = $derived(
-    Object.fromEntries(production.map((p: any) => [p.roster_id, p.production_vbd || 0]))
-  );
-
-
-
-  // Merge historical delta into diagnostics for table
-  let diagnosticsWithHistory = $derived(
-    diagnostics.map((d: any) => {
-      const hist = rosterDeltas.find((h: any) => h.roster_id === d.roster_id);
-      return {
-        ...d,
-        prev_team_value: hist?.prev_team_value ?? null,
-        value_delta_pct: hist?.value_delta_pct ?? null
-      };
-    })
-  );
-
-  // Lightweight Portfolio Overview data (client fetched summaries)
-  let portfolioData: any[] = $state([]);
-  let loadingPortfolio = $state(false);
-  let showMethodology = $state(false);
-
-  let topTeam = $derived(diagnostics.find((d: any) => d.value_rank === 1) || diagnostics[0]);
-  let medHhi = $derived(median(diagnostics.map((d: any) => Number(d.hhi))));
-  let hiHhi = $derived(diagnostics.reduce((a: any, b: any) => Number(a?.hhi) > Number(b?.hhi) ? a : b, diagnostics[0]));
-
-  // Historical deltas from rosterDeltas (per roster prev)
-  let prevTotal = $derived(rosterDeltas.reduce((s: number, h: any) => s + (h.prev_team_value || 0), 0));
-  let valueDeltaPct = $derived(prevTotal > 0 ? ((valueTotal - prevTotal) / prevTotal * 100) : null);
-
-  // Compute prev median HHI from rosterDeltas (using prev values)
-  let prevMedHhi = $derived.by(() => {
-    if (!rosterDeltas.length || prevTotal <= 0) return null;
-    const hhIs = rosterDeltas
-      .filter((h: any) => h.prev_team_value != null)
-      .map((h: any) => {
-        const share = h.prev_team_value / prevTotal;
-        return share * share;
-      });
-    if (!hhIs.length) return null;
-    const sorted = [...hhIs].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-  });
-  let hhiDelta = $derived( (medHhi != null && prevMedHhi != null) ? (medHhi - prevMedHhi) : null );
-
-  // Sparkline data for league value trend (chronological)
-  let sparkPoints = $derived.by(() => {
-    if (!valueHistory.length) return '';
-    const vals = valueHistory.map((h: any) => h.total_value || 0);
-    const min = Math.min(...vals);
-    const max = Math.max(...vals);
-    const range = max - min || 1;
-    const w = 80, h = 24;
-    return vals.map((v: number, i: number) => {
-      const x = (i / (vals.length - 1)) * w;
-      const y = h - ((v - min) / range) * h;
-      return `${x},${y}`;
-    }).join(' ');
-  });
-
-  let prodLeader = $derived(() => {
-    let leadId: number | null = null, leadV = -1;
-    for (const [rid, v] of Object.entries(prodByRoster)) {
-      if ((v as number) > leadV) { leadV = v as number; leadId = Number(rid); }
-    }
-    return { id: leadId, vbd: leadV };
-  });
-
-  async function onDrill(rosterId: number) {
-    const res = await fetch(`/api/leagues/${currentLeague}/rosters/${rosterId}`);
-    rosterDetail = {
-      rosterId,
-      assets: await res.json(),
-      meta: diagnostics.find((d: any) => d.roster_id === rosterId)
-    };
+  const isPortfolio = leagueId === '__portfolio__';
+  if (!leagueId) return { leagueId: null, diagnostics: [], production: [] };
+  if (isPortfolio) {
+    // Return minimal for portfolio mode (data is loaded client-side)
+    return { leagueId, diagnostics: [], production: [], projected: [], construction: [], valueHistory: [], rosterDeltas: [], deltaDates: null };
   }
 
-  // Portfolio overview loader (lightweight, client-side for multiple leagues)
-  $effect(() => {
-    if (!isPortfolio) {
-      portfolioData = [];
-      return;
-    }
-    loadingPortfolio = true;
-    (async () => {
-      try {
-        // Fetch leagues list then diagnostics for each (latest season per league group)
-        const leaguesRes = await fetch('/api/leagues').then(r => r.json());
-        const summaries = await Promise.all(
-          leaguesRes.map(async (l: any) => {
-            try {
-              const diag = await fetch(`/api/leagues/${l.league_id}/diagnostics`).then(r => r.json());
-              const totalVal = diag.reduce((s: number, d: any) => s + (d.team_value || 0), 0);
-              const medH = median(diag.map((d: any) => Number(d.hhi)));
-              return {
-                league: l,
-                diag,
-                totalValue: totalVal,
-                medHHI: medH,
-                topTeam: diag.find((d: any) => d.value_rank === 1)
-              };
-            } catch { return { league: l, diag: [], totalValue: 0, medHHI: null }; }
-          })
-        );
-        portfolioData = summaries;
-      } catch (e) {
-        portfolioData = [];
-      }
-      loadingPortfolio = false;
-    })();
-  });
-</script>
+  const [diagnostics, production, projected, construction, valueHistoryRaw, fcDeltasRaw, prevHhiRaw] = await Promise.all([
+    query(`
+      WITH rp AS (
+        SELECT league_id, roster_id, fp_market_value AS v
+        FROM v_roster_assets
+        WHERE snapshot_date = (SELECT MAX(snapshot_date) FROM v_roster_assets)
+          AND league_id = ?
+          AND fp_market_value IS NOT NULL
+      ),
+      rt AS (
+        SELECT league_id, roster_id, SUM(v) AS team_value, COUNT(*) AS n_assets
+        FROM rp GROUP BY league_id, roster_id
+      ),
+      hhi AS (
+        SELECT rp.league_id, rp.roster_id,
+               SUM( (1.0 * rp.v / rt.team_value) * (1.0 * rp.v / rt.team_value) ) AS hhi
+        FROM rp JOIN rt ON rt.league_id = rp.league_id AND rt.roster_id = rp.roster_id
+        GROUP BY rp.league_id, rp.roster_id
+      )
+      SELECT m.owner_name,
+             rt.roster_id,
+             rt.team_value,
+             rt.n_assets,
+             PERCENT_RANK() OVER (PARTITION BY rt.league_id ORDER BY rt.team_value) AS value_percentile,
+             RANK()         OVER (PARTITION BY rt.league_id ORDER BY rt.team_value DESC) AS value_rank,
+             h.hhi
+      FROM rt
+      JOIN hhi h ON h.league_id = rt.league_id AND h.roster_id = rt.roster_id
+      LEFT JOIN dim_managers m ON m.league_id = rt.league_id AND m.roster_id = rt.roster_id
+      ORDER BY value_rank
+    `, [leagueId]),
+    query(`
+      SELECT v.roster_id,
+             SUM(v.vbd_value) AS production_vbd,
+             SUM(v.fp_market_value) AS team_value
+      FROM v_player_value v
+      WHERE v.league_id = ?
+        AND v.snapshot_date = (
+          SELECT MAX(snapshot_date) FROM v_player_value WHERE league_id = ?
+        )
+      GROUP BY v.roster_id
+      ORDER BY v.roster_id
+    `, [leagueId, leagueId]).catch(() => []),
+    query(`
+      SELECT p.roster_id,
+             SUM(p.vbd_proj) AS production_vbd
+      FROM player_projected_value p
+      WHERE p.league_id = ?
+        AND p.as_of_date = (
+          SELECT MAX(as_of_date) FROM player_projected_value WHERE league_id = ?
+        )
+      GROUP BY p.roster_id
+      ORDER BY p.roster_id
+    `, [leagueId, leagueId]).catch(() => []),
+    query(`
+      SELECT c.roster_id, c.osl_points, c.surplus_count, c.surplus_vorp, c.surplus_points,
+             c.slots_filled, c.skipped_slots, c.points_basis
+      FROM roster_construction c
+      WHERE c.league_id = ?
+        AND c.snapshot_date = (
+          SELECT MAX(snapshot_date) FROM roster_construction WHERE league_id = ?
+        )
+      ORDER BY c.osl_points DESC
+    `, [leagueId, leagueId]).catch(() => []),
+    // ── MOVEMENT METRICS ARE COMPUTED ON FC ONLY (locked methodology) ──────
+    // FP is a deterministic exponential of ECR ordinal ranks, so FP deltas are
+    // artifacts of rank-curve position, not market repricing — the same reason
+    // the roster table uses fc_trend_30day. Levels stay FP (house currency);
+    // movement is FC (settings-aware). Players without an FC value are
+    // excluded from movement sums, never FP-substituted.
+    //
+    // valueHistory: league FC total over recent snapshot dates (sparkline).
+    query(`
+      WITH recent AS (
+        SELECT snapshot_date FROM v_player_market
+        WHERE league_id = ? AND fc_market_value IS NOT NULL
+        GROUP BY snapshot_date
+        ORDER BY snapshot_date DESC LIMIT 6
+      )
+      SELECT snapshot_date, SUM(fc_market_value) AS total_value
+      FROM v_player_market
+      WHERE league_id = ? AND fc_market_value IS NOT NULL
+        AND snapshot_date IN (SELECT snapshot_date FROM recent)
+      GROUP BY snapshot_date ORDER BY snapshot_date
+    `, [leagueId, leagueId]).catch(() => []),
+    // Per-roster FC movement between the two most recent snapshot dates.
+    // The dates travel with the rows so the UI can label the delta with the
+    // actual comparison window instead of implying a live feed.
+    query(`
+      WITH dates AS (
+        SELECT snapshot_date FROM v_player_market
+        WHERE league_id = ? AND fc_market_value IS NOT NULL
+        GROUP BY snapshot_date
+        ORDER BY snapshot_date DESC LIMIT 2
+      ),
+      prev AS (
+        SELECT roster_id, SUM(fc_market_value) AS prev_team_value
+        FROM v_player_market WHERE league_id = ? AND fc_market_value IS NOT NULL
+          AND snapshot_date = (SELECT MIN(snapshot_date) FROM dates) GROUP BY roster_id
+      ),
+      curr AS (
+        SELECT roster_id, SUM(fc_market_value) AS curr_team_value
+        FROM v_player_market WHERE league_id = ? AND fc_market_value IS NOT NULL
+          AND snapshot_date = (SELECT MAX(snapshot_date) FROM dates) GROUP BY roster_id
+      )
+      SELECT c.roster_id, c.curr_team_value, p.prev_team_value,
+             (SELECT MIN(snapshot_date) FROM dates) AS prev_snapshot_date,
+             (SELECT MAX(snapshot_date) FROM dates) AS curr_snapshot_date,
+             CASE WHEN p.prev_team_value > 0
+                  THEN (c.curr_team_value - p.prev_team_value) * 100.0 / p.prev_team_value
+                  ELSE NULL END AS value_delta_pct
+      FROM curr c LEFT JOIN prev p ON p.roster_id = c.roster_id
+    `, [leagueId, leagueId, leagueId]).catch(() => []),
+    // Previous within-team ASSET HHI, computed with the SAME definition and
+    // currency as diagnostics.hhi (FP incl. picks, v_roster_assets) at the
+    // previous snapshot date. The prior implementation compared the current
+    // median within-team asset HHI against a median of squared team-shares of
+    // league value — two different quantities; that delta was meaningless.
+    query(`
+      WITH dates AS (
+        SELECT snapshot_date FROM v_roster_assets
+        WHERE league_id = ? AND fp_market_value IS NOT NULL
+        GROUP BY snapshot_date
+        ORDER BY snapshot_date DESC LIMIT 2
+      ),
+      rp AS (
+        SELECT roster_id, fp_market_value AS v
+        FROM v_roster_assets
+        WHERE league_id = ? AND fp_market_value IS NOT NULL
+          AND snapshot_date = (SELECT MIN(snapshot_date) FROM dates)
+      ),
+      rt AS (SELECT roster_id, SUM(v) AS tv FROM rp GROUP BY roster_id)
+      SELECT rp.roster_id,
+             SUM( (1.0 * rp.v / rt.tv) * (1.0 * rp.v / rt.tv) ) AS prev_hhi,
+             (SELECT MIN(snapshot_date) FROM dates) AS prev_snapshot_date,
+             (SELECT MAX(snapshot_date) FROM dates) AS curr_snapshot_date
+      FROM rp JOIN rt ON rt.roster_id = rp.roster_id
+      GROUP BY rp.roster_id
+    `, [leagueId, leagueId]).catch(() => [])
+  ]);
 
-<TickerTape leagueId={currentLeague} />
+  // HONEST-HISTORY GUARD: with a single snapshot in the warehouse, MIN(dates)
+  // = MAX(dates) and every "delta" degenerates to a 0.0% that reads as real
+  // stability. No history -> no deltas (dashes downstream, never fabrication).
+  const fcTwoDates = (fcDeltasRaw as any[]).length > 0 &&
+    (fcDeltasRaw as any[])[0].prev_snapshot_date !== (fcDeltasRaw as any[])[0].curr_snapshot_date;
+  const hhiTwoDates = (prevHhiRaw as any[]).length > 0 &&
+    (prevHhiRaw as any[])[0].prev_snapshot_date !== (prevHhiRaw as any[])[0].curr_snapshot_date;
+  const prevHhiBy = hhiTwoDates
+    ? Object.fromEntries((prevHhiRaw as any[]).map((h: any) => [h.roster_id, h.prev_hhi]))
+    : {};
+  const rosterDeltas = fcTwoDates
+    ? (fcDeltasRaw as any[]).map((d: any) => ({ ...d, prev_hhi: prevHhiBy[d.roster_id] ?? null }))
+    : [];
+  const deltaDates = fcTwoDates
+    ? { prev: (fcDeltasRaw as any[])[0].prev_snapshot_date, curr: (fcDeltasRaw as any[])[0].curr_snapshot_date }
+    : null;
+  const valueHistory = ((valueHistoryRaw as any[]) || []).length > 1 ? valueHistoryRaw : [];
 
-<InsightRail {diagnostics} {construction} leagueId={currentLeague} />
-
-{#if isPortfolio}
-  <div class="mb-6">
-    <Card.Root>
-      <Card.Header>
-        <Card.Title>Portfolio Overview <span class="text-ink-dim font-normal">— cross-league snapshot</span></Card.Title>
-      </Card.Header>
-      <Card.Content>
-        {#if loadingPortfolio}
-          <div class="text-ink-dim text-sm py-4">Loading league summaries…</div>
-        {:else if portfolioData.length}
-          <div class="grid grid-cols-3 gap-3 mb-4 text-sm">
-            <div>Leagues tracked: <b>{portfolioData.length}</b></div>
-            <div>Teams: <b>{portfolioData.reduce((s, p) => s + (p.diag?.length || 0), 0)}</b></div>
-            <div>Median HHI (across): <b>{(median(portfolioData.map(p => p.medHHI).filter(Boolean)) || 0).toFixed(3)}</b></div>
-          </div>
-
-          <Table.Root>
-            <Table.Header>
-              <Table.Row>
-                <Table.Head>League</Table.Head>
-                <Table.Head class="text-right">Teams</Table.Head>
-                <Table.Head class="text-right">Total Value</Table.Head>
-                <Table.Head class="text-right">Med HHI</Table.Head>
-                <Table.Head>Top Team</Table.Head>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {#each portfolioData as p}
-                <Table.Row class="cursor-pointer" onclick={() => { /* switch to this league */ goto(`?league=${p.league.league_id}`, { replaceState:true }); }}>
-                  <Table.Cell>{p.league.league_name} ({p.league.season})</Table.Cell>
-                  <Table.Cell class="text-right font-mono">{p.diag?.length || 0}</Table.Cell>
-                  <Table.Cell class="text-right font-mono">{fmt(Math.round(p.totalValue || 0))}</Table.Cell>
-                  <Table.Cell class="text-right font-mono">{p.medHHI != null ? p.medHHI.toFixed(3) : '–'}</Table.Cell>
-                  <Table.Cell>{p.topTeam?.owner_name || '–'}</Table.Cell>
-                </Table.Row>
-              {/each}
-            </Table.Body>
-          </Table.Root>
-          <div class="text-[10px] text-ink-faint mt-2">Click a row to load that league's full dashboard.</div>
-        {:else}
-          <div class="text-ink-dim">No portfolio data.</div>
-        {/if}
-      </Card.Content>
-    </Card.Root>
-  </div>
-{:else}
-<div class="grid grid-cols-4 gap-3 mb-5">
-  <KpiCard
-    label="Portfolio Value"
-    value={fmt(Math.round(valueTotal))}
-    sub={valueDeltaPct != null 
-      ? `<span class="delta-tag ${valueDeltaPct >= 0 ? 'up' : 'down'}">${valueDeltaPct >= 0 ? '+' : ''}${valueDeltaPct.toFixed(1)}%</span><span>market cap vs prev snapshot · top: ${topTeam?.owner_name || ""}</span>`
-      : '<span class="delta-tag flat">LEAGUE</span><span>market cap · top: ' + (topTeam?.owner_name || "") + '</span>'}
-    tone="kpi-accent"
-    tooltip="Sum of roster market value (FantasyPros 2QB) — includes owned draft picks via v_roster_assets. Delta vs previous snapshot date."
-  />
-  <KpiCard
-    label="HHI Concentration"
-    value={medHhi != null ? medHhi.toFixed(3) : '–'}
-    sub={hhiDelta != null 
-      ? `<span class="delta-tag flat">${hhiDelta >= 0 ? '+' : ''}${hhiDelta.toFixed(3)}</span><span>median vs prev · most concentrated: ${hiHhi?.owner_name || ""}</span>`
-      : '<span class="delta-tag flat">LEAGUE</span><span>median · most concentrated: ' + (hiHhi?.owner_name || "") + '</span>'}
-    tone={medHhi != null ? hhiTone(medHhi) : ''}
-    tooltip="Herfindahl-Hirschman Index of positional value concentration. Lower is better (more diversified). Delta is change vs previous snapshot."
-  />
-  <KpiCard
-    label="Value Share"
-    value={pctShare(topTeam?.team_value, valueTotal)}
-    sub='<span class="delta-tag up">LEADER</span><span>{topTeam?.owner_name || ""} · click a team for its share</span>'
-    tone="kpi-accent"
-    tooltip="Share of total league market value"
-  />
-  <KpiCard
-    label="Production Share"
-    value={prodTotal > 0 ? pctShare(prodLeader().vbd, prodTotal) : '–'}
-    sub={prodTotal > 0
-      ? `<span class="delta-tag up">LEADER</span><span>share of league VBD</span>`
-      : '<span class="delta-tag flat">PENDING</span><span>run models</span>'}
-    tone={prodTotal > 0 ? 'kpi-good' : ''}
-    tooltip="Share of league VBD (points over replacement)"
-  />
-</div>
-
-{#if sparkPoints && valueHistory.length > 1}
-  <div class="flex items-center gap-2 mb-4 text-xs text-ink-dim">
-    <span>Value trend:</span>
-    <svg width="80" height="24" class="inline-block align-middle" viewBox="0 0 80 24">
-      <polyline 
-        points={sparkPoints} 
-        fill="none" 
-        stroke="var(--color-accent)" 
-        stroke-width="1.5" 
-        stroke-linejoin="round" 
-        stroke-linecap="round" 
-      />
-    </svg>
-    <span class="text-[10px]">({valueHistory.length} snapshots)</span>
-  </div>
-{/if}
-
-<div class="mb-2">
-  <button 
-    class="text-[10px] px-2 py-0.5 rounded border border-line-strong text-ink-dim hover:text-ink hover:bg-panel-hover"
-    onclick={() => showMethodology = !showMethodology}
-  >
-    ⓘ Methodology &amp; Data Sources
-  </button>
-</div>
-
-{#if showMethodology}
-  <Card.Root class="mb-4 border-accent/30">
-    <Card.Header>
-      <Card.Title class="text-sm">Methodology Notes</Card.Title>
-    </Card.Header>
-    <Card.Content class="text-xs text-ink-dim space-y-2 leading-relaxed">
-      <div>
-        <strong>HHI (Herfindahl-Hirschman Index):</strong> Measures concentration as <code>SUM( (value_share)^2 )</code> across a team's assets. 
-        0 = perfectly diversified, higher = more concentrated (0.25+ is high). Uses current snapshot fp_market_value (incl. picks via v_roster_assets).
-      </div>
-      <div>
-        <strong>Value data:</strong> FantasyPros (via DynastyProcess) for expert-derived fp values; FantasyCalc for crowd-sourced market (fc) values. 
-        v_roster_assets view unions players + draft picks. Historical from fact_roster_historical_value snapshots (ETL runs).
-      </div>
-      <div>
-        <strong>Deltas &amp; trends:</strong> Compared to the previous available snapshot date. Sparklines show recent total league portfolio value trajectory.
-      </div>
-      <div>
-        <strong>Limitations:</strong> No TEP applied at source; projections used for production. See Model Lab for backtest validation of models.
-      </div>
-      <button class="text-[10px] underline" onclick={() => showMethodology = false}>Close</button>
-    </Card.Content>
-  </Card.Root>
-{/if}
-
-<div id="value-chart" data-insight-target="value-chart">
-  <TeamValuationChart rows={diagnosticsWithHistory} />
-</div>
-
-<div class="h-5"></div>
-
-<Card.Root id="diagnostics-table" data-insight-target="diagnostics-table">
-  <Card.Header>
-    <Card.Title>Diagnostics <span class="text-[11px] text-ink-faint font-normal normal-case tracking-normal ml-2">— click a team to drill in · includes draft picks</span></Card.Title>
-  </Card.Header>
-  <Card.Content>
-    <DiagnosticsTable rows={diagnosticsWithHistory} ondrill={onDrill} />
-  </Card.Content>
-</Card.Root>
-
-<div class="h-5"></div>
-
-<div class="grid grid-cols-2 gap-5">
-  <div id="arbitrage-panel" data-insight-target="arbitrage-panel">
-    <ArbitragePanel leagueId={currentLeague} />
-  </div>
-  <TriangulationChart leagueId={currentLeague} />
-</div>
-
-<div class="h-5"></div>
-
-<div id="cornering-section" data-insight-target="cornering-section">
-  <CorneringPanel leagueId={currentLeague} {diagnostics} />
-</div>
-
-<div class="h-5"></div>
-
-<ConstructionPanel leagueId={currentLeague} {construction} {diagnostics} />
-
-{/if}
-
-{#if rosterDetail}
-  <div class="h-5"></div>
-  <RosterDetail
-    rosterId={rosterDetail.rosterId}
-    assets={rosterDetail.assets}
-    meta={rosterDetail.meta}
-    {diagnostics}
-    {production}
-    {projected}
-  />
-{/if}
+  return {
+    leagueId,
+    diagnostics,
+    production,
+    projected,
+    construction,
+    valueHistory,
+    rosterDeltas,
+    deltaDates
+  };
+};
